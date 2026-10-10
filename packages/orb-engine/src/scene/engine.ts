@@ -17,6 +17,7 @@ import type {
 } from '../types.js';
 import { SILENCE } from '../types.js';
 import { srgbColor } from './color.js';
+import { NetworkPass } from './network.js';
 import { OrbPass } from './orb.js';
 import { SkyPass } from './sky.js';
 import type { FrameContext, ScenePass } from './pass.js';
@@ -112,7 +113,7 @@ export class OrbEngine implements OrbSceneHandle {
     // Drawn in this order every frame: sky, then the star network, then the
     // orb on a cleared depth buffer. One context, three passes.
     this.skyPass = new SkyPass(this.tier);
-    this.passes = [this.skyPass, this.orbPass];
+    this.passes = [this.skyPass, new NetworkPass(this.tier, options.seed), this.orbPass];
 
     this.liveRegion = (options.announceState ?? true) ? this.createLiveRegion() : null;
 
