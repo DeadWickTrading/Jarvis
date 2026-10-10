@@ -1,0 +1,41 @@
+/*
+ * Self-hosted type. The woff2 files sit next to this stylesheet in the repo
+ * and Vite fingerprints them into the bundle, so the page never asks Google
+ * (or anyone) for a font at runtime and works offline.
+ *
+ * Unbounded and Bricolage Grotesque are variable fonts, so one file each
+ * covers the whole weight range. IBM Plex Mono ships static, hence two.
+ * All four are the latin subset.
+ */
+
+@font-face {
+  font-family: 'Unbounded';
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url('../fonts/unbounded-latin-var.woff2') format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'Bricolage Grotesque';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('../fonts/bricolage-grotesque-latin-var.woff2') format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('../fonts/ibm-plex-mono-latin-400.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('../fonts/ibm-plex-mono-latin-600.woff2') format('woff2');
+}

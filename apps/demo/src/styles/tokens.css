@@ -1,0 +1,72 @@
+/*
+ * GENERATED FILE — do not edit.
+ *
+ * Source of truth: packages/orb-engine/src/brand.ts
+ * Regenerate:     npm run tokens
+ * Verify:         npm run lint:tokens
+ *
+ * Every colour in the UI comes from here. The scene is dark-only, so
+ * there is one set; the block below is the single place a light set
+ * would be added.
+ */
+
+:root {
+  color-scheme: dark;
+
+  /* --- brand palette ------------------------------------------------ */
+  --dw-accent: #5CF03D;
+  --dw-accent-rgb: 92 240 61;
+  --dw-secondary: #A44DFF;
+  --dw-secondary-rgb: 164 77 255;
+  --dw-listening: #FFB21E;
+  --dw-listening-rgb: 255 178 30;
+  --dw-error: #F2385A;
+  --dw-error-rgb: 242 56 90;
+  --dw-success: #12B886;
+  --dw-success-rgb: 18 184 134;
+  --dw-cyan: #3DD9F0;
+  --dw-cyan-rgb: 61 217 240;
+  --dw-ink: #0D1016;
+  --dw-ink-rgb: 13 16 22;
+  --dw-panel: #161A23;
+  --dw-panel-rgb: 22 26 35;
+  --dw-border: #262C3A;
+  --dw-border-rgb: 38 44 58;
+  --dw-text: #ECEEF3;
+  --dw-text-rgb: 236 238 243;
+  --dw-muted: #9AA1B2;
+  --dw-muted-rgb: 154 161 178;
+  --dw-dim: #6B7285;
+  --dw-dim-rgb: 107 114 133;
+
+  /* --- cluster hues (one per star cluster) --------------------------- */
+  --dw-cluster-0: #12B886;
+  --dw-cluster-1: #3DD9F0;
+  --dw-cluster-2: #3D8AF0;
+  --dw-cluster-3: #A44DFF;
+  --dw-cluster-4: #3DF0A8;
+  --dw-cluster-5: #5C6BF0;
+  --dw-cluster-6: #2FC8D9;
+  --dw-cluster-7: #8347E0;
+
+  /* --- semantic aliases --------------------------------------------- */
+  --dw-bg: var(--dw-ink);
+  --dw-surface: var(--dw-panel);
+  --dw-surface-raised: var(--dw-border);
+  --dw-hairline: var(--dw-border);
+  --dw-text-strong: var(--dw-text);
+  --dw-text-muted: var(--dw-muted);
+  --dw-text-dim: var(--dw-dim);
+  --dw-focus: var(--dw-accent);
+  --dw-state-idle: var(--dw-accent);
+  --dw-state-arming: var(--dw-listening);
+  --dw-state-listening: var(--dw-listening);
+  --dw-state-processing: var(--dw-secondary);
+  --dw-state-speaking: var(--dw-accent);
+  --dw-state-error: var(--dw-error);
+
+  /* --- typography --------------------------------------------------- */
+  --dw-font-display: 'Unbounded', 'Trebuchet MS', system-ui, sans-serif;
+  --dw-font-body: 'Bricolage Grotesque', system-ui, -apple-system, sans-serif;
+  --dw-font-mono: 'IBM Plex Mono', Menlo, 'SF Mono', ui-monospace, monospace;
+}

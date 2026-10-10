@@ -1,0 +1,58 @@
+/*
+ * Demo chrome. Every colour here is a token from tokens.css; there are no
+ * colour literals in this file, and `npm run lint:tokens` enforces that.
+ */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--dw-bg);
+  color: var(--dw-text-strong);
+  font-family: var(--dw-font-body);
+  font-weight: 400;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* The scene fills the viewport and everything else floats over it. */
+#scene {
+  position: fixed;
+  inset: 0;
+  /* The canvas is the only child that paints; stacking context for the UI. */
+  z-index: 0;
+}
+
+#scene canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.wordmark {
+  position: fixed;
+  top: clamp(16px, 3vh, 34px);
+  left: clamp(16px, 3vw, 34px);
+  z-index: 1;
+  margin: 0;
+  font-family: var(--dw-font-display);
+  font-weight: 800;
+  font-size: clamp(0.95rem, 1.6vw, 1.3rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--dw-text-strong);
+  pointer-events: none;
+}
+
+.wordmark span {
+  color: var(--dw-accent);
+}

@@ -1,0 +1,32 @@
+{
+  "name": "@deadwick/orb-engine",
+  "version": "0.1.0",
+  "description": "Framework-free WebGL scene engine: wireframe orb, nebula sky, living star network.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "main": "./dist/orb-engine.js",
+  "module": "./dist/orb-engine.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/orb-engine.js"
+    }
+  },
+  "files": ["dist", "src"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@types/three": "0.186.0",
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vitest": "3.2.7"
+  }
+}

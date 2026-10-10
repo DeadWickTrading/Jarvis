@@ -1,0 +1,26 @@
+{
+  "name": "jarvis-face",
+  "private": true,
+  "version": "0.1.0",
+  "description": "A living galaxy face for Jarvis: wireframe orb, nebula sky and a star network that answers the AI's voice.",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @deadwick/orb-demo",
+    "build": "npm run build -w @deadwick/orb-engine && npm run build -w @deadwick/orb-demo",
+    "preview": "npm run preview -w @deadwick/orb-demo",
+    "test": "npm run test -w @deadwick/orb-engine",
+    "typecheck": "tsc -b packages/orb-engine apps/demo",
+    "tokens": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/gen-tokens.mjs",
+    "lint:tokens": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/gen-tokens.mjs --check",
+    "shots": "node scripts/shoot.mjs",
+    "check": "npm run lint:tokens && npm run typecheck && npm run test"
+  },
+  "devDependencies": {
+    "playwright-core": "1.56.1",
+    "typescript": "5.9.3"
+  }
+}
