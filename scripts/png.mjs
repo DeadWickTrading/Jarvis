@@ -269,3 +269,40 @@ export function pointAspectRatio(
   ratios.sort((a, b) => a - b);
   return ratios[Math.floor(ratios.length / 2)];
 }
+
+/**
+ * Mean RGB over a centred box covering `fraction` of each axis.
+ *
+ * Whole-frame means are dominated by the sky, which barely changes between
+ * some states, so a transition that is dramatic on the orb can produce a tiny
+ * frame-wide signal and a correspondingly noisy measurement. Looking only
+ * where the orb is raises that signal by an order of magnitude.
+ */
+export function meanRgbOfRegion(png, fraction = 0.5) {
+  const { width, height, channels, data } = png;
+  const halfW = Math.max(1, Math.round((width * fraction) / 2));
+  const halfH = Math.max(1, Math.round((height * fraction) / 2));
+  const x0 = Math.max(0, Math.round(width / 2) - halfW);
+  const x1 = Math.min(width, Math.round(width / 2) + halfW);
+  const y0 = Math.max(0, Math.round(height / 2) - halfH);
+  const y1 = Math.min(height, Math.round(height / 2) + halfH);
+
+  const totals = [0, 0, 0];
+  let n = 0;
+  for (let y = y0; y < y1; y += 1) {
+    for (let x = x0; x < x1; x += 1) {
+      const i = (y * width + x) * channels;
+      if (channels >= 3) {
+        totals[0] += data[i];
+        totals[1] += data[i + 1];
+        totals[2] += data[i + 2];
+      } else {
+        totals[0] += data[i];
+        totals[1] += data[i];
+        totals[2] += data[i];
+      }
+      n += 1;
+    }
+  }
+  return n > 0 ? totals.map((v) => v / n / 255) : [0, 0, 0];
+}

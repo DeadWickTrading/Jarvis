@@ -18,6 +18,15 @@ export interface PerfMonitorOptions {
   readonly sustainSeconds?: number;
   /** Frames to ignore at startup, while shaders compile and caches warm. */
   readonly warmupFrames?: number;
+  /**
+   * Longest gap still treated as a frame, in seconds.
+   *
+   * A backgrounded tab, a garbage collection pause or a modal dialog produce
+   * gaps of seconds. Those are stalls, not a frame rate: counted as frames
+   * they would both wreck the average and trip the watchdog instantly on the
+   * first frame after the tab comes back.
+   */
+  readonly maxCredibleSeconds?: number;
 }
 
 export interface PerfMonitor {
@@ -35,6 +44,7 @@ export function createPerfMonitor(options: PerfMonitorOptions = {}): PerfMonitor
   const thresholdFps = options.thresholdFps ?? 45;
   const sustainSeconds = options.sustainSeconds ?? 3;
   const warmupFrames = options.warmupFrames ?? 30;
+  const maxCredibleSeconds = options.maxCredibleSeconds ?? 0.5;
 
   let frames = 0;
   /** Seconds spent continuously below the threshold. */
@@ -45,7 +55,9 @@ export function createPerfMonitor(options: PerfMonitorOptions = {}): PerfMonitor
 
   return {
     sample(dt: number): PerformanceTier {
-      if (!(dt > 0) || !Number.isFinite(dt)) return latchedLow ? 'low' : 'high';
+      if (!(dt > 0) || !Number.isFinite(dt) || dt > maxCredibleSeconds) {
+        return latchedLow ? 'low' : 'high';
+      }
       frames += 1;
       // Roughly a one-second window: weight ~ dt / 1s, capped so a single
       // enormous hitch cannot throw the average away entirely.

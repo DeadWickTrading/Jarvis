@@ -13,7 +13,13 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
-import { decodePng, imageStats, meanAbsDiff, pointAspectRatio } from './png.mjs';
+import {
+  decodePng,
+  imageStats,
+  meanAbsDiff,
+  meanRgbOfRegion,
+  pointAspectRatio,
+} from './png.mjs';
 
 const CHROME = process.env.CHROME_PATH ?? '/opt/pw-browsers/chromium';
 const OUT_DIR = join(process.cwd(), 'shots');
@@ -111,8 +117,11 @@ const argValue = (flag, fallback) => {
 };
 const baseUrl = argValue('--url', 'http://127.0.0.1:4173');
 const only = argValue('--only', null);
-const shots = only ? SHOTS.filter((s) => s.name === only) : SHOTS;
-if (shots.length === 0) {
+// --checks-only runs the lifecycle, reduced-motion and live-region checks
+// without re-shooting every state, which makes those fast to iterate on.
+const checksOnly = args.includes('--checks-only');
+const shots = checksOnly ? [] : only ? SHOTS.filter((s) => s.name === only) : SHOTS;
+if (shots.length === 0 && !checksOnly) {
   console.error(`no shot named ${only}. Known: ${SHOTS.map((s) => s.name).join(', ')}`);
   process.exit(1);
 }
@@ -151,8 +160,15 @@ for (const shot of shots) {
   await page.waitForFunction(() => Boolean(window.scene), null, { timeout: 10_000 });
   if (shot.debugBreakAspect) await page.evaluate(() => window.scene.debugForceSquareAspect(true));
   // Click the real control rather than calling the API: that exercises the
-  // path a user takes, including the chip and readout wiring.
-  if (shot.state) await page.click(`button[data-state="${shot.state}"]`);
+  // path a user takes, including the chip and readout wiring. Shots that hide
+  // the chrome have no control to click, so those drive the handle directly.
+  if (shot.state) {
+    if (shot.query.includes('ui=off')) {
+      await page.evaluate((s) => window.scene.setState(s), shot.state);
+    } else {
+      await page.click(`button[data-state="${shot.state}"]`);
+    }
+  }
   if (shot.click) await page.click(shot.click);
   await page.waitForTimeout(shot.settle);
 
@@ -197,10 +213,23 @@ for (const shot of shots) {
 // lights the scene up quickly by design — that is the voice arriving, not the
 // state snapping, and leaving it on measures the two mixed together. What is
 // under test here is the state easing alone.
-const TRANSITION_SAMPLE_MS = 150;
+const TRANSITION_SAMPLE_MS = 120;
+/**
+ * The transition pages render small and cheap.
+ *
+ * Only the mean colour of the frame is read, so resolution buys nothing — and
+ * at full size this container manages about four frames a second under
+ * software rendering, which makes a 300ms sample land wherever a frame
+ * happens to fall rather than where it was asked for. A small viewport at the
+ * low tier gives enough frames for the sample to mean something.
+ */
+const TRANSITION_VIEWPORT = { width: 400, height: 260 };
 const transitions = [];
 
-const meanRgbOf = (buffer) => imageStats(decodePng(buffer)).meanRgb;
+// The central half of the frame: the orb and its halo, where a state change
+// actually shows. A whole-frame mean is mostly sky, and for a pair of states
+// whose skies differ little that leaves almost no signal to measure.
+const meanRgbOf = (buffer) => meanRgbOfRegion(decodePng(buffer), 0.5);
 const progressAlong = (before, mid, after) => {
   const d = after.map((v, i) => v - before[i]);
   const m = mid.map((v, i) => v - before[i]);
@@ -209,30 +238,165 @@ const progressAlong = (before, mid, after) => {
   return d.reduce((sum, v, i) => sum + v * m[i], 0) / denominator;
 };
 
-if (!only) {
+if (!only || checksOnly) {
   for (const [from, to] of [
     ['idle', 'speaking'],
     ['idle', 'error'],
     ['listening', 'processing'],
   ]) {
-    const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1 });
-    await page.goto(`${baseUrl}/?perf=high&motion=full&audio=off`, { waitUntil: 'load' });
+    const page = await browser.newPage({
+      viewport: TRANSITION_VIEWPORT,
+      deviceScaleFactor: 1,
+    });
+    await page.goto(`${baseUrl}/?perf=low&motion=full&audio=off&ui=off`, { waitUntil: 'load' });
     await page.waitForFunction(() => Boolean(window.scene), null, { timeout: 10_000 });
 
-    await page.click(`button[data-state="${from}"]`);
+    await page.evaluate((s) => window.scene.setState(s), from);
     await page.waitForTimeout(2400);
     const before = meanRgbOf(await page.screenshot({ type: 'png' }));
 
-    await page.click(`button[data-state="${to}"]`);
+    const clockAtClick = await page.evaluate((s) => {
+      window.scene.setState(s);
+      return window.scene.debugClocks().animTime;
+    }, to);
     await page.waitForTimeout(TRANSITION_SAMPLE_MS);
     const mid = meanRgbOf(await page.screenshot({ type: 'png' }));
+    const animElapsed = (await page.evaluate(() => window.scene.debugClocks().animTime)) -
+      clockAtClick;
 
     await page.waitForTimeout(2400);
     const after = meanRgbOf(await page.screenshot({ type: 'png' }));
 
-    transitions.push({ from, to, progress: progressAlong(before, mid, after) });
+    transitions.push({ from, to, progress: progressAlong(before, mid, after), animElapsed });
     await page.close();
   }
+}
+
+// --- lifecycle check ---------------------------------------------------------
+// Destroy and recreate the scene many times over. A browser allows only
+// around sixteen live WebGL contexts, so a teardown that leaks one per cycle
+// shows up here as the browser quietly dropping older contexts and the scene
+// going blank — not as an exception anyone would otherwise see.
+const RECREATE_CYCLES = 24;
+let lifecycle = null;
+
+if (!only || checksOnly) {
+  const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+  const noise = [];
+  page.on('console', (m) => {
+    if (m.type() === 'error' || m.type() === 'warning') noise.push(`${m.type()}: ${m.text()}`);
+  });
+  page.on('pageerror', (e) => noise.push(`pageerror: ${e.message}`));
+
+  await page.goto(`${baseUrl}/?perf=high&motion=full&ui=off&audio=off`, { waitUntil: 'load' });
+  await page.waitForFunction(() => Boolean(window.scene), null, { timeout: 10_000 });
+
+  for (let i = 0; i < RECREATE_CYCLES; i += 1) {
+    await page.evaluate(() => window.recreateScene());
+    await page.waitForTimeout(60);
+  }
+
+  // The scene that survives all that still has to render and still has to move.
+  await page.waitForTimeout(1500);
+  const first = decodePng(await page.screenshot({ type: 'png' }));
+  await page.waitForTimeout(800);
+  const second = decodePng(await page.screenshot({ type: 'png' }));
+
+  const canvases = await page.evaluate(() => document.querySelectorAll('canvas').length);
+  const liveRegions = await page.evaluate(
+    () => document.querySelectorAll('[role="status"]').length,
+  );
+
+  lifecycle = {
+    cycles: RECREATE_CYCLES,
+    stdDev: imageStats(first).stdDev,
+    motion: meanAbsDiff(first, second),
+    canvases,
+    liveRegions,
+    noise,
+  };
+  await page.close();
+}
+
+// --- reduced motion ----------------------------------------------------------
+// The OS setting is honoured by slowing the engine's own animation clock
+// rather than by multiplying wall time, so the clock is what to measure.
+//
+// Inferring it from pixels does not work: an absolute frame-to-frame
+// difference saturates once the starfield has decorrelated from its earlier
+// self, and both clocks pass that point quickly, which made a threefold
+// slowdown read as a small one. Reading the clock is exact. A pixel check
+// still runs alongside it, for the opposite failure — honouring the setting
+// by stopping the scene dead instead of calming it.
+let reducedMotion = null;
+
+if (!only || checksOnly) {
+  const measure = async (opts) => {
+    const page = await browser.newPage({ ...opts, viewport: VIEWPORT, deviceScaleFactor: 1 });
+    await page.goto(`${baseUrl}/?perf=high&ui=off&audio=off`, { waitUntil: 'load' });
+    await page.waitForFunction(() => Boolean(window.scene), null, { timeout: 10_000 });
+    await page.waitForTimeout(800);
+
+    // Clock first, over a clean window. A screenshot of a software-rendered
+    // WebGL canvas takes long enough to stall the frame loop, so sampling the
+    // clock across one measures the screenshot as much as the animation.
+    const start = await page.evaluate(() => ({
+      anim: window.scene.debugClocks().animTime,
+      wall: performance.now(),
+    }));
+    await page.waitForTimeout(2000);
+    const end = await page.evaluate(() => ({
+      anim: window.scene.debugClocks().animTime,
+      wall: performance.now(),
+      scale: window.scene.debugClocks().motionScale,
+    }));
+
+    // Pixels afterwards, purely to catch a scene that has stopped dead.
+    const beforePixels = decodePng(await page.screenshot({ type: 'png' }));
+    await page.waitForTimeout(1200);
+    const afterPixels = decodePng(await page.screenshot({ type: 'png' }));
+
+    await page.close();
+    return {
+      // Animation seconds elapsed per real second.
+      rate: (end.anim - start.anim) / ((end.wall - start.wall) / 1000),
+      scale: end.scale,
+      motion: meanAbsDiff(beforePixels, afterPixels),
+    };
+  };
+
+  const full = await measure({ reducedMotion: 'no-preference' });
+  const reduced = await measure({ reducedMotion: 'reduce' });
+  reducedMotion = { full, reduced, ratio: full.rate > 0 ? reduced.rate / full.rate : 1 };
+}
+
+// --- live region -------------------------------------------------------------
+// A screen reader needs to be told whether this thing is listening or
+// thinking. Check the region exists, is polite, and actually tracks the state.
+let liveRegion = null;
+
+if (!only || checksOnly) {
+  const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+  await page.goto(`${baseUrl}/?perf=high&motion=full&audio=off`, { waitUntil: 'load' });
+  await page.waitForFunction(() => Boolean(window.scene), null, { timeout: 10_000 });
+
+  const announcements = [];
+  for (const state of ['listening', 'processing', 'error', 'idle']) {
+    await page.click(`button[data-state="${state}"]`);
+    await page.waitForTimeout(120);
+    announcements.push({
+      state,
+      text: await page.evaluate(() => {
+        const el = document.querySelector('[role="status"]');
+        return el ? (el.textContent ?? '').trim() : null;
+      }),
+      polite: await page.evaluate(
+        () => document.querySelector('[role="status"]')?.getAttribute('aria-live') ?? null,
+      ),
+    });
+  }
+  liveRegion = announcements;
+  await page.close();
 }
 
 await browser.close();
@@ -337,30 +501,134 @@ for (const r of results) {
 }
 
 if (transitions.length > 0) {
-  console.log(
-    `\ntransition progress ${TRANSITION_SAMPLE_MS}ms after the click ` +
-      '(a hard cut reads ~1.0; the easing predicts roughly 0.3-0.4):',
-  );
+  // Reading the progress figure alone is not enough: how far along a
+  // transition should be depends on how much animation time actually passed,
+  // and under software rendering that varies run to run. So invert the easing
+  // instead. For an exponential approach, progress p over t seconds implies a
+  // rate of -ln(1 - p) / t, which is comparable no matter when the sample
+  // landed.
+  //
+  // The engine eases colour at about 2.8/s and the other parameters at about
+  // 3.7/s, and the sampled colour moves under both. A hard cut would imply an
+  // enormous rate; a scene that ignored the click, a rate near zero.
+  //
+  // The accepted floor sits well below the parameter rates on purpose. Not
+  // every visual difference between two states is an eased parameter: the
+  // mesh also has to morph there, and that follows the noise clock, which
+  // accumulates at the state's noise speed rather than chasing a target. For
+  // a pair like idle and error, where the noise speed itself drops to almost
+  // nothing, a real part of the change settles slowly and drags the implied
+  // rate down. The upper bound is what guards against snapping; the lower one
+  // only has to catch a click that did nothing at all.
+  const RATE_BAND = { min: 0.8, max: 8 };
+  console.log('\nstate transitions (easing rate implied by the rendered frames):');
   for (const t of transitions) {
-    console.log(`  ${`${t.from} -> ${t.to}`.padEnd(24)} ${f(t.progress, 3)}`);
+    const implied = t.animElapsed > 0 ? -Math.log(1 - Math.min(0.999, t.progress)) / t.animElapsed : 0;
+    t.impliedRate = implied;
+    console.log(
+      `  ${`${t.from} -> ${t.to}`.padEnd(24)} progress ${f(t.progress, 3)} after ` +
+        `${f(t.animElapsed, 3)}s  =>  ${f(implied, 2)}/s`,
+    );
   }
-  // Both bounds matter: too high means it snapped, too low means the click
-  // did nothing and the shot would have passed by accident.
-  const snapped = transitions.filter((t) => t.progress > 0.6);
-  const stalled = transitions.filter((t) => t.progress < 0.04);
+  console.log(`  (engine eases at 2.8-3.7/s; accepted band ${RATE_BAND.min}-${RATE_BAND.max}/s)`);
+
+  const snapped = transitions.filter((t) => t.impliedRate > RATE_BAND.max);
+  const stalled = transitions.filter((t) => t.impliedRate < RATE_BAND.min);
   if (snapped.length > 0) {
     console.error(
       `\n✗ ${snapped.length} transition(s) snap rather than ease: ` +
-        snapped.map((t) => `${t.from}->${t.to} (${f(t.progress, 2)})`).join(', '),
+        snapped.map((t) => `${t.from}->${t.to} (${f(t.impliedRate, 1)}/s)`).join(', '),
     );
     problems += snapped.length;
   }
   if (stalled.length > 0) {
     console.error(
-      `\n✗ ${stalled.length} transition(s) never started: ` +
-        stalled.map((t) => `${t.from}->${t.to} (${f(t.progress, 2)})`).join(', '),
+      `\n✗ ${stalled.length} transition(s) barely moved: ` +
+        stalled.map((t) => `${t.from}->${t.to} (${f(t.impliedRate, 1)}/s)`).join(', '),
     );
     problems += stalled.length;
+  }
+}
+
+if (lifecycle) {
+  console.log(`\nlifecycle: ${lifecycle.cycles} destroy/recreate cycles`);
+  console.log(
+    `  surviving canvases ${lifecycle.canvases}  live regions ${lifecycle.liveRegions}  ` +
+      `content ${f(lifecycle.stdDev)}  motion ${f(lifecycle.motion, 4)}`,
+  );
+  if (lifecycle.canvases !== 1 || lifecycle.liveRegions !== 1) {
+    console.error(
+      `\n✗ teardown leaks DOM: ${lifecycle.canvases} canvas(es) and ` +
+        `${lifecycle.liveRegions} live region(s) remain, expected 1 of each`,
+    );
+    problems += 1;
+  }
+  if (lifecycle.stdDev < 0.01) {
+    console.error('\n✗ the scene is blank after repeated recreation — a context was lost');
+    problems += 1;
+  }
+  if (lifecycle.motion < 0.0004) {
+    console.error('\n✗ the scene stopped animating after repeated recreation');
+    problems += 1;
+  }
+  for (const n of lifecycle.noise) {
+    console.error(`\n✗ lifecycle: ${n}`);
+    problems += 1;
+  }
+}
+
+if (reducedMotion) {
+  const { full, reduced, ratio } = reducedMotion;
+  console.log('\nreduced motion (animation seconds per real second):');
+  console.log(
+    `  full    rate ${f(full.rate, 3)}  scale ${f(full.scale, 2)}  pixels ${f(full.motion, 4)}`,
+  );
+  console.log(
+    `  reduced rate ${f(reduced.rate, 3)}  scale ${f(reduced.scale, 2)}  ` +
+      `pixels ${f(reduced.motion, 4)}`,
+  );
+  console.log(`  clock ratio ${f(ratio, 3)}`);
+
+  if (!(ratio < 0.5)) {
+    console.error(`\n✗ reduce-motion barely slows the clock (ratio ${f(ratio, 2)})`);
+    problems += 1;
+  }
+  // Not 1.0: under software rendering this container manages only a few
+  // frames a second, and below four the integration cap deliberately slows
+  // the clock rather than letting the scene jump. On real hardware frames are
+  // milliseconds and the cap never applies.
+  if (!(full.rate > 0.5)) {
+    console.error(
+      `\n✗ the clock runs far behind real time (${f(full.rate, 2)}x) even at full motion`,
+    );
+    problems += 1;
+  }
+  // Calmer, not frozen: a still scene is its own accessibility failure.
+  if (reduced.motion < 0.0004) {
+    console.error('\n✗ reduce-motion stops the scene entirely rather than slowing it');
+    problems += 1;
+  }
+}
+
+if (liveRegion) {
+  console.log('\nlive region:');
+  for (const a of liveRegion) {
+    console.log(`  ${a.state.padEnd(12)} aria-live=${a.polite}  "${a.text}"`);
+  }
+  for (const a of liveRegion) {
+    if (a.polite !== 'polite') {
+      console.error(`\n✗ live region is not polite for ${a.state} (got ${a.polite})`);
+      problems += 1;
+    }
+    if (!a.text) {
+      console.error(`\n✗ live region says nothing for ${a.state}`);
+      problems += 1;
+    }
+  }
+  const texts = liveRegion.map((a) => a.text);
+  if (new Set(texts).size !== texts.length) {
+    console.error(`\n✗ live region does not distinguish the states: ${texts.join(' / ')}`);
+    problems += 1;
   }
 }
 

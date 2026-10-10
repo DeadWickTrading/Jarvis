@@ -36,8 +36,19 @@ const TIER_PIXEL_RATIO: Record<PerformanceTier, number> = { high: 2, low: 1 };
  */
 const REDUCED_MOTION_SCALE = 0.3;
 
-/** Longest frame we will integrate. Guards against tab-switch time jumps. */
-const MAX_FRAME_SECONDS = 0.1;
+/**
+ * Longest frame the animation clock will integrate, in seconds.
+ *
+ * rAF does not fire while a tab is in the background, so the first frame
+ * after it returns can report many seconds. Integrating that would jump the
+ * whole scene forward at once. Capping it costs nothing on real hardware,
+ * where frames are milliseconds, and keeps the resume invisible.
+ *
+ * It does mean that a device slower than four frames a second animates in
+ * slow motion. That is the right trade: at that frame rate the scene has
+ * bigger problems, and the performance tier will already have dropped.
+ */
+const MAX_FRAME_SECONDS = 0.25;
 
 /** Playback is already mastered at a sane level, so it needs less lift than a mic. */
 const PLAYBACK_BANDS = { gain: 1.6, floor: 0.03 } as const;
@@ -188,6 +199,24 @@ export class OrbEngine implements OrbSceneHandle {
   }
 
   /**
+   * Test hook, not part of the supported surface: the engine's internal
+   * clocks.
+   *
+   * Reduced motion is implemented by slowing `animTime` relative to wall
+   * time, and that is the claim worth testing. Inferring it from pixels is
+   * unreliable — a frame-to-frame difference saturates once the starfield has
+   * decorrelated, so a threefold slowdown can measure as a small one. Reading
+   * the clock answers it exactly.
+   */
+  debugClocks(): { animTime: number; audioClock: number; motionScale: number } {
+    return {
+      animTime: this.animTime,
+      audioClock: this.audioClock,
+      motionScale: this.motionScale,
+    };
+  }
+
+  /**
    * Test hook, not part of the supported surface: breaks the sky's aspect
    * correction on purpose so a visual test can prove it would notice.
    */
@@ -311,16 +340,23 @@ export class OrbEngine implements OrbSceneHandle {
     if (this.destroyed) return;
     this.frameHandle = requestAnimationFrame(this.frame);
 
-    const dt = clamp((nowMs - this.lastFrameMs) / 1000, 0, MAX_FRAME_SECONDS);
+    const elapsed = (nowMs - this.lastFrameMs) / 1000;
     this.lastFrameMs = nowMs;
-    if (dt <= 0) return;
+    if (!(elapsed > 0)) return;
 
+    // The watchdog and the frame-rate readout see the real elapsed time.
+    // Feeding them the capped value would floor the reported frame rate at
+    // 1 / MAX_FRAME_SECONDS, so a scene genuinely managing three frames a
+    // second would report four and look merely sluggish rather than broken.
     if (this.perfMode === 'auto') {
-      const tier = this.perf.sample(dt);
+      const tier = this.perf.sample(elapsed);
       if (tier !== this.tier) this.applyTier(tier);
     } else {
-      this.perf.sample(dt);
+      this.perf.sample(elapsed);
     }
+
+    // Animation integrates the capped value.
+    const dt = clamp(elapsed, 0, MAX_FRAME_SECONDS);
 
     stepParams(this.params, this.state, dt);
     this.audio = this.sampleAudio(dt);

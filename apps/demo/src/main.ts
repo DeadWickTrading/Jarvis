@@ -25,13 +25,17 @@ const seedParam = Number(query.get('seed'));
 // stretched stars to a measurement that works on bright blobs.
 if (query.get('ui') === 'off') document.body.classList.add('scene-only');
 
-const scene: OrbSceneHandle = createOrbScene(container, {
-  initialState: 'idle',
-  performanceMode: initialPerf,
-  respectReducedMotion: query.get('motion') !== 'full',
-  syntheticAudioFallback: query.get('audio') !== 'off',
-  ...(Number.isFinite(seedParam) && seedParam !== 0 ? { seed: seedParam } : {}),
-});
+function buildScene(initialState: OrbState = 'idle'): OrbSceneHandle {
+  return createOrbScene(container!, {
+    initialState,
+    performanceMode: initialPerf,
+    respectReducedMotion: query.get('motion') !== 'full',
+    syntheticAudioFallback: query.get('audio') !== 'off',
+    ...(Number.isFinite(seedParam) && seedParam !== 0 ? { seed: seedParam } : {}),
+  });
+}
+
+let scene: OrbSceneHandle = buildScene();
 
 // --- element lookup ----------------------------------------------------------
 
@@ -225,8 +229,26 @@ let readoutHandle = requestAnimationFrame(function tick() {
 
 showState(scene.getState());
 
+/**
+ * Tear the scene down and build a new one in its place.
+ *
+ * Exposed for the visual tests, which do this many times over to prove the
+ * teardown really releases everything. Browsers cap how many live WebGL
+ * contexts a page may hold — around sixteen — so a leak shows up as the
+ * browser dropping older contexts and the scene going blank, rather than as
+ * an exception anyone would notice.
+ */
+function recreateScene(): void {
+  const state = scene.getState();
+  scene.destroy();
+  scene = buildScene(state);
+  if (micStream) scene.setMicSource(micStream);
+  showState(state);
+  Object.assign(window, { scene });
+}
+
 // Exposed so the screenshot harness and manual poking can drive the scene.
-Object.assign(window, { scene });
+Object.assign(window, { scene, recreateScene });
 
 window.addEventListener('beforeunload', () => {
   cancelAnimationFrame(readoutHandle);

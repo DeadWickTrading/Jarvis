@@ -1,0 +1,26 @@
+name: check
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # Token drift, stray colour literals, types, and the unit tests. The
+      # colour lint is the reason this workflow exists: the palette is only a
+      # single source of truth if something enforces it.
+      - run: npm run check
+
+      - run: npm run build
