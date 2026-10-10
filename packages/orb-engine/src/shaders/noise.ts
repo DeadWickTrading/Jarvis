@@ -109,11 +109,20 @@ float vnoise(vec2 p) {
     u.y);
 }
 
+// Octave count is a define so the performance tier can recompile a cheaper
+// nebula without a second copy of the shader. Five is the full-quality value.
+#ifndef FBM_OCTAVES
+#define FBM_OCTAVES 5
+#endif
+
 float fbm(vec2 p) {
+  // Each octave is rotated as well as doubled. Scaling alone leaves the
+  // lattice of the underlying value noise aligned across octaves, which reads
+  // as a faint grid once the layers are stacked.
   const mat2 rot = mat2(0.80, 0.60, -0.60, 0.80);
   float value = 0.0;
   float amplitude = 0.5;
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < FBM_OCTAVES; i++) {
     value += amplitude * vnoise(p);
     p = rot * p * 2.0;
     amplitude *= 0.5;

@@ -18,6 +18,7 @@ import type {
 import { SILENCE } from '../types.js';
 import { srgbColor } from './color.js';
 import { OrbPass } from './orb.js';
+import { SkyPass } from './sky.js';
 import type { FrameContext, ScenePass } from './pass.js';
 
 /** Pixel ratio ceiling per tier. The low tier always renders 1:1. */
@@ -47,6 +48,7 @@ export class OrbEngine implements OrbSceneHandle {
 
   private readonly passes: ScenePass[];
   private readonly orbPass: OrbPass;
+  private skyPass!: SkyPass;
 
   private readonly params = initialParams('idle');
   private state: OrbState;
@@ -107,8 +109,10 @@ export class OrbEngine implements OrbSceneHandle {
     container.appendChild(this.canvas);
 
     this.orbPass = new OrbPass(this.tier);
-    // Layers are added here in order: sky, network, orb.
-    this.passes = [this.orbPass];
+    // Drawn in this order every frame: sky, then the star network, then the
+    // orb on a cleared depth buffer. One context, three passes.
+    this.skyPass = new SkyPass(this.tier);
+    this.passes = [this.skyPass, this.orbPass];
 
     this.liveRegion = (options.announceState ?? true) ? this.createLiveRegion() : null;
 
@@ -171,6 +175,15 @@ export class OrbEngine implements OrbSceneHandle {
 
   getFps(): number {
     return this.perf.fps();
+  }
+
+  /**
+   * Test hook, not part of the supported surface: breaks the sky's aspect
+   * correction on purpose so a visual test can prove it would notice.
+   */
+  debugForceSquareAspect(on: boolean): void {
+    this.skyPass.forceSquareAspect = on;
+    this.skyPass.resize(this.width, this.height);
   }
 
   destroy(): void {

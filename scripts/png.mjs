@@ -167,3 +167,105 @@ export function meanAbsDiff(a, b) {
   }
   return sum / n;
 }
+
+/**
+ * Measure how round the bright points in an image are.
+ *
+ * Stars are only a few pixels across, so comparing lit run lengths quantises
+ * hopelessly — a 3x2 blob reads as 1.5 whether or not anything is wrong.
+ * Instead each bright blob is flood-filled and its intensity-weighted second
+ * moments are taken, which is sensitive well below a pixel because the points
+ * are anti-aliased. The returned figure is the median of sqrt(varX / varY)
+ * over all blobs: 1 means round, far from 1 means stretched.
+ *
+ * The orb is excluded by ignoring a disc around the centre. Its wireframe
+ * breaks into short bright arcs along the rim, and an arc is legitimately
+ * elongated, so leaving them in drags the median toward "stretched" in
+ * exactly the bright states where the orb is most visible.
+ *
+ * @param excludeCentre Radius of the ignored central disc, as a fraction of
+ *   image height. The orb spans about 0.29 of the height and its halo about
+ *   0.37, so the default clears both.
+ */
+export function pointAspectRatio(
+  png,
+  { threshold = 0.3, maxBlob = 64, maxPoints = 600, excludeCentre = 0.42 } = {},
+) {
+  const { width, height, channels, data } = png;
+  const at = (x, y) => luma(data, (y * width + x) * channels, channels);
+  const visited = new Uint8Array(width * height);
+  const ratios = [];
+
+  const cx = width / 2;
+  const cy = height / 2;
+  const excludeR2 = (excludeCentre * height) ** 2;
+
+  for (let y = 1; y < height - 1 && ratios.length < maxPoints; y += 1) {
+    for (let x = 1; x < width - 1 && ratios.length < maxPoints; x += 1) {
+      const head = y * width + x;
+      if (visited[head] || at(x, y) <= threshold) continue;
+      if ((x - cx) ** 2 + (y - cy) ** 2 < excludeR2) continue;
+
+      // Flood-fill this blob, collecting intensity-weighted moments.
+      const stack = [head];
+      visited[head] = 1;
+      let w = 0;
+      let sx = 0;
+      let sy = 0;
+      let sxx = 0;
+      let syy = 0;
+      let count = 0;
+      let rejected = false;
+
+      while (stack.length > 0) {
+        const index = stack.pop();
+        const px = index % width;
+        const py = (index - px) / width;
+        const v = at(px, py);
+        w += v;
+        sx += v * px;
+        sy += v * py;
+        sxx += v * px * px;
+        syy += v * py * py;
+        count += 1;
+        // Anything this large is not a point star.
+        if (count > maxBlob) {
+          rejected = true;
+          break;
+        }
+        for (const [nx, ny] of [
+          [px - 1, py],
+          [px + 1, py],
+          [px, py - 1],
+          [px, py + 1],
+        ]) {
+          if (nx < 1 || ny < 1 || nx >= width - 1 || ny >= height - 1) {
+            // Runs off the frame, so its true extent is unknown.
+            rejected = true;
+            continue;
+          }
+          const n = ny * width + nx;
+          if (!visited[n] && at(nx, ny) > threshold) {
+            visited[n] = 1;
+            stack.push(n);
+          }
+        }
+      }
+
+      if (rejected || count < 2 || w <= 0) continue;
+
+      const meanX = sx / w;
+      const meanY = sy / w;
+      const varX = sxx / w - meanX * meanX;
+      const varY = syy / w - meanY * meanY;
+      // A blob one pixel wide in an axis has zero variance there; adding the
+      // variance of a unit square keeps the ratio finite and comparable.
+      const ratio = Math.sqrt((varX + 1 / 12) / (varY + 1 / 12));
+      if (Number.isFinite(ratio)) ratios.push(ratio);
+    }
+  }
+
+  if (ratios.length < 20) return null;
+  ratios.sort((a, b) => a - b);
+  return ratios[Math.floor(ratios.length / 2)];
+}

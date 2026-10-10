@@ -13,7 +13,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
-import { decodePng, imageStats, meanAbsDiff } from './png.mjs';
+import { decodePng, imageStats, meanAbsDiff, pointAspectRatio } from './png.mjs';
 
 const CHROME = process.env.CHROME_PATH ?? '/opt/pw-browsers/chromium';
 const OUT_DIR = join(process.cwd(), 'shots');
@@ -48,6 +48,28 @@ const SHOTS = [
   { name: 'speaking', query: 'perf=high&motion=full', state: 'speaking', settle: 3000 },
   { name: 'error', query: 'perf=high&motion=full', state: 'error', settle: 2600 },
   { name: 'low-tier', query: 'perf=low&motion=full', state: 'speaking', settle: 2600 },
+  // A deliberately tall window. The star grid is sampled in aspect-corrected
+  // space, so the stars must stay round here rather than stretching into
+  // vertical dashes.
+  {
+    name: 'portrait',
+    query: 'perf=high&motion=full',
+    state: 'processing',
+    settle: 2600,
+    viewport: { width: 480, height: 900 },
+    expectStarAspect: 'round',
+  },
+  // The same tall window with the aspect correction deliberately disabled.
+  // This shot is expected to FAIL roundness: it is how the check above earns
+  // its keep. A measure that cannot see this is not measuring anything.
+  {
+    name: 'aspect-selftest',
+    query: 'perf=high&motion=full',
+    settle: 1200,
+    viewport: { width: 480, height: 900 },
+    debugBreakAspect: true,
+    expectStarAspect: 'stretched',
+  },
 ];
 
 const args = process.argv.slice(2);
@@ -70,7 +92,7 @@ const results = [];
 let problems = 0;
 
 for (const shot of shots) {
-  const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: shot.viewport ?? VIEWPORT, deviceScaleFactor: 1 });
   const messages = [];
   page.on('console', (m) => {
     if (m.type() === 'error' || m.type() === 'warning') messages.push(`${m.type()}: ${m.text()}`);
@@ -95,6 +117,7 @@ for (const shot of shots) {
   }
 
   await page.waitForFunction(() => Boolean(window.scene), null, { timeout: 10_000 });
+  if (shot.debugBreakAspect) await page.evaluate(() => window.scene.debugForceSquareAspect(true));
   if (shot.state) await page.evaluate((s) => window.scene.setState(s), shot.state);
   await page.waitForTimeout(shot.settle);
 
@@ -108,7 +131,9 @@ for (const shot of shots) {
   const file = join(OUT_DIR, `${shot.name}.png`);
   const buffer = await page.screenshot({ type: 'png' });
   writeFileSync(file, buffer);
-  const stats = imageStats(decodePng(buffer));
+  const decoded = decodePng(buffer);
+  const stats = imageStats(decoded);
+  const starAspect = pointAspectRatio(decoded);
 
   // Take a second frame a beat later and diff it. A still scene and a moving
   // one look identical in a single screenshot; this is what distinguishes
@@ -117,7 +142,7 @@ for (const shot of shots) {
   const motion = meanAbsDiff(decodePng(buffer), decodePng(await page.screenshot({ type: 'png' })));
 
   if (messages.length > 0) problems += messages.length;
-  results.push({ shot: shot.name, gl, probe, stats, motion, messages });
+  results.push({ shot: shot.name, gl, probe, stats, motion, starAspect, messages });
   await page.close();
 }
 
@@ -148,6 +173,30 @@ for (const r of results) {
       f(r.motion, 4),
     ].join(''),
   );
+}
+
+console.log('\nstar roundness (width:height of bright points; 1.0 means square pixels):');
+for (const r of results) {
+  console.log(
+    `  ${r.shot.padEnd(11)} ${r.starAspect === null ? 'too few points' : f(r.starAspect, 2)}`,
+  );
+}
+const isStretched = (r) => r.starAspect !== null && Math.abs(r.starAspect - 1) > 0.25;
+for (const r of results) {
+  const expected = SHOTS.find((s) => s.name === r.shot)?.expectStarAspect ?? 'round';
+  if (expected === 'stretched') {
+    if (!isStretched(r)) {
+      console.error(
+        `\n✗ ${r.shot}: the roundness check failed to notice a deliberately broken aspect ` +
+          `(measured ${r.starAspect === null ? 'nothing' : f(r.starAspect, 2)}). ` +
+          'The check is not measuring what it claims to.',
+      );
+      problems += 1;
+    }
+  } else if (isStretched(r)) {
+    console.error(`\n✗ ${r.shot}: stars are stretched (${f(r.starAspect, 2)})`);
+    problems += 1;
+  }
 }
 
 console.log('\ncentre-weighted 3x3 luminance grid (top row first):');

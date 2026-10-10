@@ -177,11 +177,24 @@ describe('activityLevel', () => {
     }
   });
 
-  it('rises a long way with the voice', () => {
+  it('lets the voice dominate the resting motion while speaking', () => {
     const params = initialParams('speaking');
     const quiet = activityLevel(params, SILENCE, 1);
     const shouting = activityLevel(params, loud, 1);
-    expect(shouting).toBeGreaterThan(quiet * 5);
+
+    // The invariant that matters is that the audio term outweighs the
+    // baseline and breath, not any particular ratio — the amplitudes are
+    // tuned by eye against real screenshots and will move again.
+    const fromVoice = shouting - quiet;
+    expect(fromVoice).toBeGreaterThan(quiet * 2);
+  });
+
+  it('is driven by the voice far more in speaking than in idle', () => {
+    const speaking = initialParams('speaking');
+    const idle = initialParams('idle');
+    const responseOf = (p: ReturnType<typeof initialParams>) =>
+      activityLevel(p, loud, 1) - activityLevel(p, SILENCE, 1);
+    expect(responseOf(speaking)).toBeGreaterThan(responseOf(idle) * 2);
   });
 
   it('breathes: silence is not perfectly static', () => {

@@ -83,7 +83,7 @@ void main() {
   // A small floor keeps the mesh faintly readable across the whole sphere;
   // the rim is where the brightness lives, so the face we look straight at is
   // close to invisible and the silhouette reads as a thin bright edge.
-  float strength = uOpacity * (0.08 + 0.92 * fresnel) * (0.55 + uGlow * 0.75);
+  float strength = uOpacity * (0.08 + 0.92 * fresnel) * (0.45 + uGlow * 0.5);
 
   // Additive blending multiplies the source by its own alpha, so anything put
   // in the alpha channel would be applied twice. The magnitude belongs in the
@@ -104,31 +104,51 @@ void main() {
 }
 `;
 
+/**
+ * Where the glow band peaks, as a view-angle cosine.
+ *
+ * The shell has radius 1.3 and the orb 1.0, so the shell's surface projects
+ * onto the orb's silhouette at facing = sqrt(1 - (1.0 / 1.3)^2) = 0.639. That
+ * is the ring of the shell that sits exactly at the orb's edge on screen.
+ */
+const GLOW_BAND_CENTER = Math.sqrt(1 - (1 / 1.3) ** 2);
+
 const GLOW_FRAGMENT = /* glsl */ `
 uniform vec3 uColor;
 uniform float uStrength;
-uniform float uPower;
+uniform float uBandWidth;
 
 varying vec3 vNormalView;
 varying vec3 vViewDir;
 
 void main() {
-  // Rendered back-faces-only, so this shades the far hemisphere. At the
-  // silhouette the normal is perpendicular to the view and this goes to 1; at
-  // the centre of the disc it points straight away and this goes to 0.
-  //
-  // That direction matters: inverted, the shell fills in as a solid blob the
-  // moment the orb gets loud, instead of reading as a halo around it.
+  // Rendered back-faces-only, so this shades the far hemisphere of a shell
+  // larger than the orb. 'facing' runs from 0 at the shell's silhouette to 1
+  // at the centre of its projected disc.
   float facing = abs(dot(normalize(vNormalView), normalize(vViewDir)));
-  float rim = pow(1.0 - facing, uPower);
 
-  // The shell's own silhouette is a hard geometric edge. Fading the last
-  // sliver out turns what would be a cut-off ring into a halo that dissolves
-  // into the sky, and it keeps the brightest band just outside the orb rather
-  // than at the shell's rim.
-  float soften = smoothstep(0.0, 0.3, facing);
+  // A halo is light hanging just outside the orb, so the brightest band has
+  // to sit where the shell passes closest to the orb's own silhouette, and
+  // fall away in both directions.
+  //
+  // A plain fresnel, pow(1.0 - facing, p), will not do that: it peaks at the
+  // shell's own silhouette, which puts a bright ring at the shell's outer
+  // edge where the geometry then stops dead. Widening the fade to hide that
+  // edge fills the middle in instead, and the halo becomes the solid blob
+  // this is trying to avoid. Both failures are visible the moment the orb
+  // gets loud.
+  //
+  // So: a gaussian band in the view angle. Still view-dependent, still
+  // rim-weighted, but with the peak placed deliberately rather than wherever
+  // the exponent happens to put it.
+  float band = (facing - ${GLOW_BAND_CENTER.toFixed(4)}) / uBandWidth;
+  float halo = exp(-band * band);
 
-  float intensity = rim * soften * uStrength;
+  // Insurance that nothing at all survives at the shell's silhouette, so the
+  // outer boundary can never read as an edge.
+  halo *= smoothstep(0.0, 0.12, facing);
+
+  float intensity = halo * uStrength;
   gl_FragColor = vec4(uColor * intensity, 1.0);
 }
 `;
@@ -201,8 +221,8 @@ export class OrbPass implements ScenePass {
       fragmentShader: GLOW_FRAGMENT,
       uniforms: {
         uColor: { value: srgbColor([1, 1, 1]) },
-        uStrength: { value: 0.35 },
-        uPower: { value: 2.6 },
+        uStrength: { value: 0.035 },
+        uBandWidth: { value: 0.3 },
       },
       transparent: true,
       depthWrite: false,
@@ -259,8 +279,9 @@ export class OrbPass implements ScenePass {
     setSrgb(g.uColor!.value as THREE.Color, color);
     // The halo answers the voice, but at a fraction of the orb's response so
     // it stays a halo rather than washing the screen.
-    g.uStrength!.value = params.glow * (0.55 + audio.level * 0.85 + audio.bass * 0.35);
-    g.uPower!.value = Math.max(1.2, params.fresnelPower * 0.95);
+    g.uStrength!.value = params.glow * (0.10 + audio.level * 0.16 + audio.bass * 0.07);
+    // A sharper orb edge gets a tighter halo, so the two read as one object.
+    g.uBandWidth!.value = 0.42 / Math.max(1.2, params.fresnelPower * 0.55);
 
     for (let i = 0; i < this.ringMeshes.length; i += 1) {
       const material = this.ringMaterials[i]!;
