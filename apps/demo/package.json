@@ -9,7 +9,8 @@
     "preview": "vite preview --port 4173"
   },
   "dependencies": {
-    "@deadwick/orb-engine": "0.1.0"
+    "@deadwick/orb-engine": "0.1.0",
+    "@deadwick/voice": "0.1.0"
   },
   "devDependencies": {
     "typescript": "5.9.3",

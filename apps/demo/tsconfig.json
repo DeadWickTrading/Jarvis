@@ -5,9 +5,10 @@
     "noEmit": false,
     "emitDeclarationOnly": true,
     "paths": {
-      "@deadwick/orb-engine": ["../../packages/orb-engine/src/index.ts"]
+      "@deadwick/orb-engine": ["../../packages/orb-engine/src/index.ts"],
+      "@deadwick/voice": ["../../packages/voice/src/index.ts"]
     }
   },
   "include": ["src/**/*.ts"],
-  "references": [{ "path": "../../packages/orb-engine" }]
+  "references": [{ "path": "../../packages/orb-engine" }, { "path": "../../packages/voice" }]
 }

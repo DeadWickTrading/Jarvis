@@ -121,6 +121,9 @@ const COLOUR_ALLOWLIST = new Set(
 
 const SCAN_DIRS = ['packages/orb-engine/src', 'apps/demo/src', 'apps/demo/public', 'scripts'];
 const SCAN_EXT = /\.(ts|tsx|css|mjs|js|html|svg)$/;
+// Generated declarations mirror whatever their source says, including the
+// palette's own literals. The lint polices authored code.
+const SKIP_EXT = /\.d\.ts$/;
 const HEX = /#[0-9a-fA-F]{3}(?:[0-9a-fA-F]{3})?\b/g;
 const FUNCTIONAL = /\b(?:rgba?|hsla?|oklch|color-mix)\s*\(/g;
 
@@ -128,7 +131,7 @@ function* walk(dir) {
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) yield* walk(full);
-    else if (SCAN_EXT.test(entry)) yield full;
+    else if (SCAN_EXT.test(entry) && !SKIP_EXT.test(entry)) yield full;
   }
 }
 

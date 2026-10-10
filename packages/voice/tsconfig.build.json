@@ -1,0 +1,16 @@
+// The published build deliberately has no "paths" alias for the engine.
+// Pointing it at the engine's source would drag those files into this
+// package's program, outside its rootDir. It resolves through node_modules to
+// the engine's built declarations instead, which is why the root build script
+// builds the engine first.
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "emitDeclarationOnly": true,
+    "composite": false,
+    "declarationMap": false
+  },
+  "include": ["src/**/*.ts"]
+}

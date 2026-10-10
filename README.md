@@ -11,7 +11,9 @@ space. If it ever looks busy when nothing is happening, turn it down.
 
 ```
 packages/orb-engine    the engine: framework-free TypeScript, three.js, no backend
-apps/demo              a Vite page that embeds it, with a control for every state
+packages/voice         speech: browser synthesis, Deepgram Aura, an ElevenLabs slot
+apps/demo              a Vite page that embeds both, with a control for every state
+server/                the speech proxy, so API keys never reach the browser
 scripts/               token generation, the screenshot harness, a PNG reader
 ```
 
@@ -30,6 +32,105 @@ npm run check        # tokens lint + typecheck + unit tests
 npm run build        # engine bundle and demo site
 npm run shots        # screenshot the real scene and measure it (see below)
 ```
+
+## Giving it a voice
+
+```bash
+cp .env.example .env     # then put your Deepgram key in it
+npm run dev
+```
+
+Type into the bar above the controls and press Speak. The orb goes to
+thinking while the audio is fetched, speaking from the first sample to the
+last, then back to idle.
+
+Three providers behind one interface:
+
+| Provider | Needs | Orb motion |
+|---|---|---|
+| **Browser speech** | nothing | synthetic envelope |
+| **Deepgram Aura** | `DEEPGRAM_API_KEY` | the real waveform |
+| **ElevenLabs** | `ELEVENLABS_API_KEY` + `ELEVENLABS_VOICE_ID` | the real waveform |
+
+```ts
+import { createSpeaker, createSceneSink, createDeepgramVoice } from '@deadwick/voice';
+
+const speaker = createSpeaker({
+  scene,                                              // the orb's handle
+  sink: createSceneSink(scene),
+  provider: createDeepgramVoice({ model: 'aura-helios-en' }),
+});
+
+await speaker.speak('Good day, sir. Jarvis Wick online.');
+```
+
+### The one thing worth knowing up front
+
+**Browser speech synthesis exposes no audio stream.** The Web Speech API hands
+an utterance straight to the platform's synthesiser; the audio never passes
+through Web Audio, so there is nothing to attach an analyser to. With that
+provider the orb animates from its synthetic envelope — convincing, and built
+for exactly this case, but unrelated to the words being said. The demo says so
+in the status line rather than pretending otherwise, and the UI prefers a
+provider whose waveform the orb can actually read.
+
+Deepgram and ElevenLabs return audio as bytes, which are decoded into the
+orb's own AudioContext and tapped. There the galaxy really is riding what is
+being said.
+
+### The voice ladder
+
+`Daniel` is Apple's en-GB voice and is simply absent on Windows, Android and
+most Linux installs, so asking for it by name has to be the first rung of a
+ladder rather than the only move:
+
+1. Daniel, en-GB
+2. anything named Daniel
+3. Google UK English Male
+4. a named British voice (Ryan, George, Thomas, Arthur, Oliver)
+5. any en-GB voice
+6. any English voice
+7. whatever the device has
+
+Within a rung a locally-installed voice beats a network one: local voices
+start instantly and keep working offline. The chosen rung is reported in the
+UI, so "not Daniel, and here is what you got instead" is visible rather than
+silent.
+
+### Keys never reach the browser
+
+`server/tts-proxy.mjs` holds the credentials. The browser sends text and
+receives audio; the key stays on the server. It is plain Node with no build
+step, so the same file is Vite middleware in development and a route in any
+server in production:
+
+```js
+import { createTtsProxy } from './server/tts-proxy.mjs';
+app.use(createTtsProxy());         // reads process.env
+```
+
+The variables are deliberately **not** `VITE_`-prefixed. Vite only exposes
+`VITE_` variables to the client bundle, so the naming is what keeps a key out
+of your JavaScript. Do not rename them.
+
+The proxy also refuses empty text, refuses text over Deepgram's 2000-character
+limit before spending a request, constrains model and voice ids to plain
+identifiers so they cannot be used to reshape the upstream URL, and turns a
+rejected key into a message about the key rather than echoing the upstream
+body. Tests assert that the key appears in no response.
+
+### Testing speech without a key
+
+```bash
+./scripts/preview.sh restart --stub-tts
+npm run shots -- --checks-only
+```
+
+`scripts/stub-tts.mjs` stands in for Deepgram and returns a real WAV whose
+amplitude follows a speech-like envelope. Every link is exercised — proxy,
+fetch, decode, playback, the orb's tap, the galaxy's response — except
+Deepgram's own servers, which is the one link an API key would test and
+nothing else would.
 
 ## Using the engine
 
@@ -95,8 +196,9 @@ including the fonts, so the page works offline.
 **The maths is pure and tested; the three.js code only draws numbers.** The
 state table, the easing, the audio bands, the synthetic envelope, the seeded
 layout and the performance decision are each small modules with unit tests
-and no WebGL in them. 105 tests run in about two seconds, in Node, with no
-browser.
+and no WebGL in them. The same applies to speech: voice selection, text
+chunking, the proxy and the state orchestration are all tested against fakes.
+157 tests run in a couple of seconds, in Node, with no browser.
 
 **All state lives in one table.** `states.ts` holds every visual parameter for
 every state in one object. Each frame every parameter moves part of the way
@@ -199,6 +301,9 @@ It also checks the things a still screenshot cannot show:
   the starfield has decorrelated, and that made a threefold slowdown look
   like a small one.
 - **The live region tracks the state.**
+- **Speech works end to end.** Pick a voice, type, press Speak — then assert
+  the orb passed through thinking, reached speaking, rode a non-zero voice
+  level and returned to idle.
 
 Every one of these exists because something was wrong and a screenshot was
 the only thing that said so.

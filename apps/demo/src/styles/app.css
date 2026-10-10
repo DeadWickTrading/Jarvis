@@ -117,18 +117,26 @@ body {
 
 /* --- controls ------------------------------------------------------------ */
 
-.controls {
+.dock {
   position: fixed;
   left: 50%;
   bottom: clamp(16px, 3.5vh, 34px);
   z-index: 1;
   transform: translateX(-50%);
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+  width: min(60rem, calc(100vw - 2 * clamp(16px, 3vw, 34px)));
+}
+
+.controls {
+  display: flex;
   flex-wrap: wrap;
   justify-content: center;
   gap: clamp(0.75rem, 2vw, 1.75rem);
   padding: clamp(0.75rem, 1.6vw, 1rem) clamp(0.9rem, 2vw, 1.4rem);
-  max-width: min(60rem, calc(100vw - 2 * clamp(16px, 3vw, 34px)));
+  max-width: 100%;
   border: 1px solid var(--dw-hairline);
   border-radius: 14px;
   background: rgb(var(--dw-panel-rgb) / 0.74);
@@ -209,14 +217,113 @@ body {
   cursor: not-allowed;
 }
 
+/* --- say bar ------------------------------------------------------------- */
+
+.say {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: min(44rem, 100%);
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--dw-hairline);
+  border-radius: 12px;
+  background: rgb(var(--dw-panel-rgb) / 0.74);
+  backdrop-filter: blur(14px);
+}
+
+.say__label {
+  font-family: var(--dw-font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dw-text-dim);
+}
+
+.say__voice {
+  flex: 0 0 auto;
+  max-width: 11rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--dw-hairline);
+  border-radius: 8px;
+  background: var(--dw-surface);
+  color: var(--dw-text-muted);
+  font-family: var(--dw-font-mono);
+  font-size: 0.7rem;
+}
+
+.say__voice:focus-visible,
+.say__text:focus-visible {
+  outline: 2px solid var(--dw-focus);
+  outline-offset: 1px;
+}
+
+.say__text {
+  flex: 1 1 auto;
+  min-width: 6rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--dw-hairline);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dw-text-strong);
+  font-family: var(--dw-font-body);
+  font-size: 0.85rem;
+}
+
+.say__text::placeholder {
+  color: var(--dw-text-dim);
+}
+
+.say__go {
+  flex: 0 0 auto;
+}
+
+.say__status {
+  margin: 0;
+  max-width: min(44rem, 100%);
+  font-family: var(--dw-font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  color: var(--dw-text-muted);
+  text-align: center;
+  pointer-events: none;
+}
+
+/* The status sits over the orb, which can be very bright. Its own surface
+   keeps it readable whatever is behind it. */
+.say__status:not(:empty) {
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: rgb(var(--dw-panel-rgb) / 0.74);
+  backdrop-filter: blur(14px);
+}
+
+.say__status[data-tone='warn'] {
+  color: var(--dw-state-arming);
+}
+
+.say__status[data-tone='error'] {
+  color: var(--dw-state-error);
+}
+
+.scene-only .say,
+.scene-only .say__status {
+  display: none;
+}
+
+@media (max-width: 40rem) {
+  .say {
+    flex-wrap: wrap;
+  }
+
+  .say__label {
+    display: none;
+  }
+}
+
 /* --- hint ---------------------------------------------------------------- */
 
 .hint {
-  position: fixed;
-  left: 50%;
-  bottom: 4px;
-  z-index: 1;
-  transform: translateX(-50%);
   margin: 0;
   font-family: var(--dw-font-mono);
   font-size: 0.62rem;

@@ -44,6 +44,10 @@ const CHROME_ARGS = [
   // rather than only the synthetic fallback.
   '--use-fake-ui-for-media-stream',
   '--use-fake-device-for-media-stream',
+  // Clicking Speak is a gesture, so this is belt and braces — but without it
+  // a suspended AudioContext makes the speech check fail for a reason that
+  // has nothing to do with the code under test.
+  '--autoplay-policy=no-user-gesture-required',
 ];
 
 /**
@@ -172,12 +176,27 @@ for (const shot of shots) {
   if (shot.click) await page.click(shot.click);
   await page.waitForTimeout(shot.settle);
 
+  // A single instantaneous read of the voice level is a flaky thing to assert
+  // on: Chromium's fake capture device beeps intermittently rather than
+  // holding a tone, so one sample can legitimately land in a gap. Shots that
+  // make a claim about audio watch for a peak over a window instead.
+  let peakLevel = 0;
+  if (shot.expectLevelAbove !== undefined) {
+    for (let i = 0; i < 24; i += 1) {
+      const level = await page.evaluate(() => window.scene.getAudioLevels().level);
+      peakLevel = Math.max(peakLevel, level);
+      if (peakLevel > shot.expectLevelAbove) break;
+      await page.waitForTimeout(120);
+    }
+  }
+
   const probe = await page.evaluate(() => ({
     state: window.scene.getState(),
     tier: window.scene.getPerformanceTier(),
     fps: Math.round(window.scene.getFps()),
     audio: window.scene.getAudioLevels(),
   }));
+  probe.peakLevel = Math.max(peakLevel, probe.audio.level);
 
   const file = join(OUT_DIR, `${shot.name}.png`);
   const buffer = await page.screenshot({ type: 'png' });
@@ -304,7 +323,7 @@ if (!only || checksOnly) {
 
   const canvases = await page.evaluate(() => document.querySelectorAll('canvas').length);
   const liveRegions = await page.evaluate(
-    () => document.querySelectorAll('[role="status"]').length,
+    () => document.querySelectorAll('.orb-live-region').length,
   );
 
   lifecycle = {
@@ -370,6 +389,86 @@ if (!only || checksOnly) {
   reducedMotion = { full, reduced, ratio: full.rate > 0 ? reduced.rate / full.rate : 1 };
 }
 
+// --- speech ------------------------------------------------------------------
+// Drives the whole voice chain the way a person does: pick a voice, type,
+// press Speak. With ./scripts/preview.sh --stub-tts the upstream is a local
+// stand-in for Deepgram that returns a real WAV, so every link is exercised
+// except Deepgram's own servers — the one link an API key would test and
+// nothing else would.
+let speech = null;
+
+if (!only || checksOnly) {
+  const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+  const noise = [];
+  page.on('console', (m) => {
+    if (m.type() === 'error') noise.push(`${m.type()}: ${m.text()}`);
+  });
+  page.on('pageerror', (e) => noise.push(`pageerror: ${e.message}`));
+
+  await page.goto(`${baseUrl}/?perf=high&motion=full&audio=off`, { waitUntil: 'load' });
+  await page.waitForFunction(() => Boolean(window.speaker), null, { timeout: 10_000 });
+
+  const health = await page.evaluate(async () => {
+    const response = await fetch('/api/tts/health');
+    return response.ok ? await response.json() : null;
+  });
+  const deepgramReady = Boolean(health?.providers?.deepgram?.configured);
+
+  if (!deepgramReady) {
+    speech = { skipped: 'no speech proxy configured — run ./scripts/preview.sh --stub-tts' };
+  } else {
+    // Wait for the provider probe to finish populating the control.
+    await page.waitForFunction(
+      () => {
+        const select = document.querySelector('#voice-select');
+        return Boolean(select?.querySelector('option[value="deepgram"]:not([disabled])'));
+      },
+      null,
+      { timeout: 10_000 },
+    );
+    await page.selectOption('#voice-select', 'deepgram');
+    await page.fill('#say-text', 'Good day, sir. Jarvis Wick online. What do you need?');
+
+    const seen = new Set();
+    const sample = async () => {
+      const probe = await page.evaluate(() => ({
+        state: window.scene.getState(),
+        level: window.scene.getAudioLevels().level,
+      }));
+      seen.add(probe.state);
+      return probe;
+    };
+
+    await page.click('#say-button');
+
+    let peakLevel = 0;
+    let speakingSamples = 0;
+    let shot = null;
+    for (let i = 0; i < 90; i += 1) {
+      const probe = await sample();
+      peakLevel = Math.max(peakLevel, probe.level);
+      if (probe.state === 'speaking') {
+        speakingSamples += 1;
+        // Screenshot a little way in, once the envelope has risen, rather
+        // than on the very first speaking frame where it is still near zero.
+        if (!shot && speakingSamples > 3) shot = await page.screenshot({ type: 'png' });
+      }
+      if (seen.has('speaking') && probe.state === 'idle') break;
+      await page.waitForTimeout(80);
+    }
+
+    if (shot) writeFileSync(join(OUT_DIR, 'speaking-deepgram.png'), shot);
+    speech = {
+      states: [...seen],
+      peakLevel,
+      speakingSamples,
+      returnedToIdle: (await sample()).state === 'idle',
+      noise,
+    };
+  }
+  await page.close();
+}
+
 // --- live region -------------------------------------------------------------
 // A screen reader needs to be told whether this thing is listening or
 // thinking. Check the region exists, is polite, and actually tracks the state.
@@ -402,9 +501,10 @@ if (!only || checksOnly) {
 await browser.close();
 
 const f = (v, n = 3) => v.toFixed(n);
-console.log(`\nrenderer: ${results[0]?.gl ?? 'n/a'}\n`);
+console.log(`\nrenderer: ${results[0]?.gl ?? 'n/a'}`);
+console.log('(peak = highest voice level seen while the shot settled)\n');
 console.log(
-  ['shot', 'state', 'tier', 'fps', 'mean', 'stddev', 'max', 'lit', 'r', 'g', 'b', 'lvl']
+  ['shot', 'state', 'tier', 'fps', 'mean', 'stddev', 'max', 'lit', 'r', 'g', 'b', 'peak', 'motion']
     .map((h) => h.padEnd(h === 'shot' ? 11 : 8))
     .join(''),
 );
@@ -422,7 +522,7 @@ for (const r of results) {
       f(r.stats.meanRgb[0]).padEnd(8),
       f(r.stats.meanRgb[1]).padEnd(8),
       f(r.stats.meanRgb[2]).padEnd(8),
-      f(r.probe.audio.level, 2).padEnd(8),
+      f(r.probe.peakLevel, 2).padEnd(8),
       f(r.motion, 4),
     ].join(''),
   );
@@ -487,10 +587,10 @@ for (const r of results) {
     );
     problems += 1;
   }
-  if (spec?.expectLevelAbove !== undefined && !(r.probe.audio.level > spec.expectLevelAbove)) {
+  if (spec?.expectLevelAbove !== undefined && !(r.probe.peakLevel > spec.expectLevelAbove)) {
     console.error(
-      `\n✗ ${r.shot}: voice level ${f(r.probe.audio.level, 3)} did not exceed ` +
-        `${spec.expectLevelAbove} — the audio tap carried nothing`,
+      `\n✗ ${r.shot}: voice level peaked at ${f(r.probe.peakLevel, 3)} over the sampling ` +
+        `window and never exceeded ${spec.expectLevelAbove} — the audio tap carried nothing`,
     );
     problems += 1;
   }
@@ -629,6 +729,42 @@ if (liveRegion) {
   if (new Set(texts).size !== texts.length) {
     console.error(`\n✗ live region does not distinguish the states: ${texts.join(' / ')}`);
     problems += 1;
+  }
+}
+
+if (speech) {
+  if (speech.skipped) {
+    console.log(`\nspeech: skipped — ${speech.skipped}`);
+  } else {
+    console.log('\nspeech (Deepgram path, driven through the real controls):');
+    console.log(
+      `  states seen ${speech.states.join(' -> ')}  peak voice level ${f(speech.peakLevel, 3)}` +
+        `  (${speech.speakingSamples} samples while speaking)`,
+    );
+
+    // The orb has to pass through thinking on its way to speaking: that phase
+    // is the network round trip and decode, and skipping it would mean the
+    // state is being guessed rather than driven by the audio.
+    for (const required of ['processing', 'speaking']) {
+      if (!speech.states.includes(required)) {
+        console.error(`\n✗ speech: the orb never entered '${required}' (saw ${speech.states.join(', ')})`);
+        problems += 1;
+      }
+    }
+    if (!(speech.peakLevel > 0.05)) {
+      console.error(
+        `\n✗ speech: voice level peaked at ${f(speech.peakLevel, 3)} — the orb is not riding the audio`,
+      );
+      problems += 1;
+    }
+    if (!speech.returnedToIdle) {
+      console.error('\n✗ speech: the orb did not return to idle when the audio finished');
+      problems += 1;
+    }
+    for (const n of speech.noise) {
+      console.error(`\n✗ speech: ${n}`);
+      problems += 1;
+    }
   }
 }
 

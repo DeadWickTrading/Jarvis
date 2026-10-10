@@ -10,10 +10,10 @@
   ],
   "scripts": {
     "dev": "npm run dev -w @deadwick/orb-demo",
-    "build": "npm run build -w @deadwick/orb-engine && npm run build -w @deadwick/orb-demo",
+    "build": "npm run build -w @deadwick/orb-engine && npm run build -w @deadwick/voice && npm run build -w @deadwick/orb-demo",
     "preview": "npm run preview -w @deadwick/orb-demo",
-    "test": "npm run test -w @deadwick/orb-engine",
-    "typecheck": "tsc -b packages/orb-engine apps/demo",
+    "test": "npm run test -w @deadwick/orb-engine && npm run test -w @deadwick/voice",
+    "typecheck": "tsc -b packages/orb-engine packages/voice apps/demo",
     "tokens": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/gen-tokens.mjs",
     "lint:tokens": "node --experimental-strip-types --disable-warning=ExperimentalWarning scripts/gen-tokens.mjs --check",
     "shots": "node scripts/shoot.mjs",

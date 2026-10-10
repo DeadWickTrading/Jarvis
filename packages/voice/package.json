@@ -1,0 +1,34 @@
+{
+  "name": "@deadwick/voice",
+  "version": "0.1.0",
+  "description": "Pluggable speech for Jarvis: browser synthesis, Deepgram Aura, and a slot for ElevenLabs.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "main": "./dist/voice.js",
+  "module": "./dist/voice.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/voice.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@deadwick/orb-engine": "0.1.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vitest": "3.2.7",
+    "@types/node": "22.18.1"
+  }
+}

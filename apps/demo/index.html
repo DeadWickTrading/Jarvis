@@ -30,7 +30,25 @@
       </div>
     </div>
 
-    <nav class="controls" aria-label="Scene controls">
+    <div class="dock">
+      <form class="say" id="say-form" aria-label="Make Jarvis speak">
+      <label class="say__label" for="voice-select">Voice</label>
+      <select class="say__voice" id="voice-select"></select>
+      <input
+        class="say__text"
+        id="say-text"
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        aria-label="What Jarvis should say"
+        value="Good day, sir. Jarvis Wick online. What do you need?"
+      />
+      <button class="say__go chip" type="submit" id="say-button">Speak</button>
+      <button class="say__go chip" type="button" id="stop-button">Stop</button>
+    </form>
+      <p class="say__status" id="voice-status" role="status" aria-live="polite"></p>
+
+      <nav class="controls" aria-label="Scene controls">
       <div class="controls__group">
         <p class="controls__legend" id="legend-state">State</p>
         <div class="controls__row" role="group" aria-labelledby="legend-state">
@@ -65,9 +83,10 @@
           <button class="chip" type="button" data-perf="low" aria-pressed="false">Low</button>
         </div>
       </div>
-    </nav>
+      </nav>
 
-    <p class="hint">Keys <kbd>1</kbd>–<kbd>6</kbd> switch state · <kbd>M</kbd> mic · <kbd>T</kbd> tone</p>
+      <p class="hint">Keys <kbd>1</kbd>–<kbd>6</kbd> switch state · <kbd>M</kbd> mic · <kbd>T</kbd> tone</p>
+    </div>
 
     <script type="module" src="./src/main.ts"></script>
   </body>

@@ -1,7 +1,18 @@
 node_modules/
+
+# Secrets. .env.example is the committed template.
+.env
+.env.local
+.env.*.local
 dist/
 *.tsbuildinfo
 .vite/
 .DS_Store
 shots/
 dist-types/
+
+# tsc can emit declarations beside their sources when a project's rootDir
+# does not cover everything in its program. They are build output, never
+# authored, and must not be committed.
+packages/*/src/**/*.d.ts
+packages/*/src/**/*.d.ts.map

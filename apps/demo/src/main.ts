@@ -1,5 +1,13 @@
 import { createOrbScene, ORB_STATES, STATE_TABLE, syntheticLevels } from '@deadwick/orb-engine';
 import type { OrbSceneHandle, OrbState, PerformanceMode } from '@deadwick/orb-engine';
+import {
+  createBrowserVoice,
+  createDeepgramVoice,
+  createElevenLabsVoice,
+  createSceneSink,
+  createSpeaker,
+} from '@deadwick/voice';
+import type { Speaker, VoiceAvailability, VoiceProvider } from '@deadwick/voice';
 
 const container = document.querySelector<HTMLElement>('#scene');
 if (!container) throw new Error('#scene container is missing from the page');
@@ -53,6 +61,12 @@ const micButton = need<HTMLButtonElement>('#mic-button');
 const toneButton = need<HTMLButtonElement>('#tone-button');
 const stateButtons = [...document.querySelectorAll<HTMLButtonElement>('button[data-state]')];
 const perfButtons = [...document.querySelectorAll<HTMLButtonElement>('button[data-perf]')];
+const sayForm = need<HTMLFormElement>('#say-form');
+const sayText = need<HTMLInputElement>('#say-text');
+const sayButton = need<HTMLButtonElement>('#say-button');
+const stopButton = need<HTMLButtonElement>('#stop-button');
+const voiceSelect = need<HTMLSelectElement>('#voice-select');
+const voiceStatus = need<HTMLElement>('#voice-status');
 
 // --- state ------------------------------------------------------------------
 
@@ -204,10 +218,135 @@ function playTestTone(): void {
 
 toneButton.addEventListener('click', playTestTone);
 
+// --- speech ------------------------------------------------------------------
+
+/**
+ * The three ways Jarvis can talk.
+ *
+ * None of them names a model here on purpose. The server chooses, from
+ * DEEPGRAM_TTS_MODEL and ELEVENLABS_VOICE_ID, so changing the voice is an
+ * environment variable and a restart rather than an edit and a rebuild. The
+ * health endpoint reports what it settled on, and the UI shows it.
+ */
+const providers: VoiceProvider[] = [
+  createBrowserVoice(),
+  createDeepgramVoice(),
+  createElevenLabsVoice(),
+];
+
+const speaker: Speaker = createSpeaker({
+  scene: {
+    setState: (state) => setState(state),
+    getState: () => scene.getState(),
+  },
+  provider: providers[0]!,
+  sink: createSceneSink({
+    getAudioContext: () => scene.getAudioContext(),
+    setPlaybackSource: (node) => scene.setPlaybackSource(node),
+  }),
+  onError: (error) => showVoiceStatus(error.message, 'error'),
+});
+
+function showVoiceStatus(message: string, tone: 'info' | 'warn' | 'error' = 'info'): void {
+  voiceStatus.textContent = message;
+  voiceStatus.dataset.tone = tone;
+}
+
+interface VoiceOption {
+  readonly provider: VoiceProvider;
+  readonly availability: VoiceAvailability;
+}
+
+let voiceOptions: VoiceOption[] = [];
+
+/** Ask each provider whether it can work, and say so honestly in the UI. */
+async function probeVoices(): Promise<void> {
+  voiceSelect.replaceChildren();
+
+  const results: VoiceOption[] = await Promise.all(
+    providers.map(async (provider) => ({
+      provider,
+      availability: await provider
+        .available()
+        .catch((error: Error): VoiceAvailability => ({ ok: false, reason: error.message })),
+    })),
+  );
+
+  for (const { provider, availability } of results) {
+    const option = document.createElement('option');
+    option.value = provider.id;
+    option.textContent = availability.ok
+      ? provider.label
+      : `${provider.label} — unavailable`;
+    option.disabled = !availability.ok;
+    option.title = availability.ok ? (availability.detail ?? '') : (availability.reason ?? '');
+    voiceSelect.append(option);
+  }
+
+  voiceOptions = results;
+
+  // Prefer a provider whose audio the orb can actually tap; fall back to the
+  // first that works at all.
+  const best =
+    results.find((r) => r.availability.ok && r.provider.providesAudioStream) ??
+    results.find((r) => r.availability.ok);
+
+  if (!best) {
+    showVoiceStatus(
+      results.map((r) => `${r.provider.label}: ${r.availability.reason}`).join('  ·  '),
+      'error',
+    );
+    sayButton.disabled = true;
+    return;
+  }
+
+  voiceSelect.value = best.provider.id;
+  selectVoice(best.provider.id);
+}
+
+function selectVoice(id: string): void {
+  const found = voiceOptions.find((r) => r.provider.id === id);
+  if (!found) return;
+
+  speaker.setProvider(found.provider);
+  sayButton.disabled = false;
+
+  const detail = found.availability.detail ?? found.provider.label;
+  // Say plainly whether the orb is riding the real waveform. Browser speech
+  // exposes no audio stream at any point, so the motion there is the engine's
+  // synthetic envelope: convincing, but unrelated to the words.
+  const motion = found.provider.providesAudioStream
+    ? 'orb rides the real waveform'
+    : 'orb motion is synthetic — browser speech exposes no audio stream';
+  showVoiceStatus(
+    `${detail} · ${motion}`,
+    found.provider.providesAudioStream ? 'info' : 'warn',
+  );
+}
+
+voiceSelect.addEventListener('change', () => selectVoice(voiceSelect.value));
+
+sayForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  const text = sayText.value.trim();
+  if (text.length === 0) return;
+  void speaker.speak(text).catch(() => {
+    // createSpeaker has already shown the error and moved the orb; nothing
+    // further to do here.
+  });
+});
+
+stopButton.addEventListener('click', () => speaker.stop());
+
+void probeVoices();
+
 // --- keyboard ----------------------------------------------------------------
 
 document.addEventListener('keydown', (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) return;
+  // Typing into the say bar must not trigger scene shortcuts.
+  const target = event.target as HTMLElement | null;
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'SELECT')) return;
   const index = Number(event.key) - 1;
   if (Number.isInteger(index) && index >= 0 && index < ORB_STATES.length) {
     setState(ORB_STATES[index]!);
@@ -248,10 +387,12 @@ function recreateScene(): void {
 }
 
 // Exposed so the screenshot harness and manual poking can drive the scene.
-Object.assign(window, { scene, recreateScene });
+Object.assign(window, { scene, recreateScene, speaker });
 
 window.addEventListener('beforeunload', () => {
   cancelAnimationFrame(readoutHandle);
+  speaker.stop();
+  for (const provider of providers) provider.dispose?.();
   stopMic();
   if (toneTimer !== null) clearTimeout(toneTimer);
   // The engine owns its AudioContext and closes it on destroy.
