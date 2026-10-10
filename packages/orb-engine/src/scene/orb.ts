@@ -1,11 +1,51 @@
 import * as THREE from 'three';
 import { SIMPLEX_3D } from '../shaders/noise.js';
 import { setSrgb, srgbColor } from './color.js';
-import type { PerformanceTier } from '../types.js';
+import type { OrbShape, PerformanceTier } from '../types.js';
 import type { FrameContext, ScenePass } from './pass.js';
 
 /** Icosahedron subdivision per tier. 24 reads as a fine mesh; 10 still reads. */
 const ORB_DETAIL: Record<PerformanceTier, number> = { high: 24, low: 10 };
+
+/**
+ * The wick silhouette: a rounded box (superellipsoid) for the body. Half
+ * extents and squareness; higher N gives sharper corners.
+ */
+const WICK_BODY = { a: 0.42, b: 0.78, c: 0.42, n: 6 } as const;
+/** Wick above and below the body: [top, bottom] as y extents, and the radius. */
+const WICK_LINE = { top: 1.42, bottom: -1.3, radius: 0.028 } as const;
+/** The whole candle is drawn a little smaller so the wicks clear the frame. */
+const WICK_SCALE = 0.9;
+
+/**
+ * Bend a sphere into the candle body. Each vertex keeps its direction but is
+ * pushed onto the superellipsoid surface, and its normal becomes the surface
+ * gradient there, so the noise displacement and the rim shading both follow
+ * the new shape without seams.
+ */
+function toWickBody(geometry: THREE.BufferGeometry): void {
+  const { a, b, c, n } = WICK_BODY;
+  const pos = geometry.getAttribute('position') as THREE.BufferAttribute;
+  const nor = geometry.getAttribute('normal') as THREE.BufferAttribute;
+  for (let i = 0; i < pos.count; i += 1) {
+    const dx = pos.getX(i);
+    const dy = pos.getY(i);
+    const dz = pos.getZ(i);
+    const sum = Math.abs(dx / a) ** n + Math.abs(dy / b) ** n + Math.abs(dz / c) ** n;
+    const t = sum > 0 ? sum ** (-1 / n) : 0;
+    const x = dx * t;
+    const y = dy * t;
+    const z = dz * t;
+    pos.setXYZ(i, x, y, z);
+    const gx = (Math.sign(x) * Math.abs(x / a) ** (n - 1)) / a;
+    const gy = (Math.sign(y) * Math.abs(y / b) ** (n - 1)) / b;
+    const gz = (Math.sign(z) * Math.abs(z / c) ** (n - 1)) / c;
+    const len = Math.hypot(gx, gy, gz) || 1;
+    nor.setXYZ(i, gx / len, gy / len, gz / len);
+  }
+  pos.needsUpdate = true;
+  nor.needsUpdate = true;
+}
 
 /** The three orbital rings: radius, tilt about x, tilt about y, spin rate. */
 const RINGS = [
@@ -183,10 +223,14 @@ export class OrbPass implements ScenePass {
   private readonly ringMaterials: THREE.MeshBasicMaterial[] = [];
 
   private tier: PerformanceTier;
+  private readonly shape: OrbShape;
+  private readonly wickGroup = new THREE.Group();
+  private readonly wickGeometries: THREE.BufferGeometry[] = [];
   private spin = 0;
 
-  constructor(tier: PerformanceTier) {
+  constructor(tier: PerformanceTier, shape: OrbShape = 'orb') {
     this.tier = tier;
+    this.shape = shape;
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
     this.camera.position.set(0, 0, 4.2);
@@ -215,6 +259,23 @@ export class OrbPass implements ScenePass {
 
     this.buildMesh();
 
+    if (shape === 'wick') {
+      // The wicks share the orb's shader, so they ripple and rim-light with it.
+      const { top, bottom, radius } = WICK_LINE;
+      const bodyTop = WICK_BODY.b;
+      for (const [from, to] of [
+        [bodyTop * 0.9, top],
+        [bottom, -bodyTop * 0.9],
+      ] as const) {
+        const height = to - from;
+        const geometry = new THREE.CylinderGeometry(radius, radius, height, 6, Math.max(4, Math.round(height * 14)), true);
+        geometry.translate(0, from + height / 2, 0);
+        this.wickGeometries.push(geometry);
+        this.wickGroup.add(new THREE.Mesh(geometry, this.material));
+      }
+      this.group.add(this.wickGroup);
+    }
+
     this.glowGeometry = new THREE.IcosahedronGeometry(1.3, 5);
     this.glowMaterial = new THREE.ShaderMaterial({
       vertexShader: GLOW_VERTEX,
@@ -230,6 +291,8 @@ export class OrbPass implements ScenePass {
       blending: THREE.AdditiveBlending,
     });
     this.glowMesh = new THREE.Mesh(this.glowGeometry, this.glowMaterial);
+    // Stretch the halo to the candle's height so it still hugs the edge.
+    if (shape === 'wick') this.glowMesh.scale.set(0.62, 1.15, 0.62);
     this.group.add(this.glowMesh);
 
     for (const ring of RINGS) {
@@ -256,6 +319,7 @@ export class OrbPass implements ScenePass {
 
   private buildMesh(): void {
     this.geometry = new THREE.IcosahedronGeometry(1, ORB_DETAIL[this.tier]);
+    if (this.shape === 'wick') toWickBody(this.geometry);
     this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.group.add(this.mesh);
   }
@@ -280,6 +344,8 @@ export class OrbPass implements ScenePass {
     // The halo answers the voice, but at a fraction of the orb's response so
     // it stays a halo rather than washing the screen.
     g.uStrength!.value = params.glow * (0.10 + audio.level * 0.16 + audio.bass * 0.07);
+    // The stretched halo covers more screen around the candle, so it runs softer.
+    if (this.shape === 'wick') g.uStrength!.value *= 0.55;
     // A sharper orb edge gets a tighter halo, so the two read as one object.
     g.uBandWidth!.value = 0.42 / Math.max(1.2, params.fresnelPower * 0.55);
 
@@ -293,10 +359,19 @@ export class OrbPass implements ScenePass {
 
     this.spin += params.rotationSpeed * ctx.dt;
     this.group.rotation.y = this.spin;
-    this.group.rotation.x = Math.sin(ctx.animTime * 0.11) * 0.22;
 
     const scale = 1 + audio.level * 0.07 + audio.bass * 0.04;
-    this.group.scale.setScalar(scale);
+    if (this.shape === 'wick') {
+      // A candle stays upright: only a slight sway. The body grows with the
+      // voice the way a candle prints while price moves.
+      this.group.rotation.x = Math.sin(ctx.animTime * 0.11) * 0.06;
+      this.group.rotation.z = Math.sin(ctx.animTime * 0.17) * 0.04;
+      this.group.scale.setScalar(scale * WICK_SCALE);
+      this.mesh.scale.set(1, 1 + audio.level * 0.22 + audio.bass * 0.08, 1);
+    } else {
+      this.group.rotation.x = Math.sin(ctx.animTime * 0.11) * 0.22;
+      this.group.scale.setScalar(scale);
+    }
   }
 
   render(renderer: THREE.WebGLRenderer): void {
@@ -321,6 +396,7 @@ export class OrbPass implements ScenePass {
     this.material.dispose();
     this.glowGeometry.dispose();
     this.glowMaterial.dispose();
+    for (const geometry of this.wickGeometries) geometry.dispose();
     for (const geometry of this.ringGeometries) geometry.dispose();
     for (const material of this.ringMaterials) material.dispose();
     this.scene.clear();

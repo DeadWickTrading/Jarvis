@@ -125,7 +125,7 @@ export class OrbEngine implements OrbSceneHandle {
 
     container.appendChild(this.canvas);
 
-    this.orbPass = new OrbPass(this.tier);
+    this.orbPass = new OrbPass(this.tier, options.shape ?? 'orb');
     // Drawn in this order every frame: sky, then the star network, then the
     // orb on a cleared depth buffer. One context, three passes.
     this.skyPass = new SkyPass(this.tier);

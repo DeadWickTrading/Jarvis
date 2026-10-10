@@ -43,6 +43,7 @@ export type {
   AudioTapSource,
   OrbSceneHandle,
   OrbSceneOptions,
+  OrbShape,
   OrbState,
   PerformanceMode,
   PerformanceTier,

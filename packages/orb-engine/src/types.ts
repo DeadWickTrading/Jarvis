@@ -82,6 +82,9 @@ export type PerformanceMode = 'auto' | 'high' | 'low';
 export type AudioTapSource = MediaStream | AudioNode | HTMLMediaElement;
 
 /** Options for {@link createOrbScene}. */
+/** Silhouette of the central subject. */
+export type OrbShape = 'orb' | 'wick';
+
 export interface OrbSceneOptions {
   /** Starting state. Defaults to `idle`. */
   readonly initialState?: OrbState;
@@ -89,6 +92,12 @@ export interface OrbSceneOptions {
   readonly seed?: number;
   /** Performance tier selection. Defaults to `auto`. */
   readonly performanceMode?: PerformanceMode;
+  /**
+   * The subject's silhouette. `orb` (default) is the noise-displaced sphere;
+   * `wick` bends the same wireframe mesh into a candle body with a wick above
+   * and below - the "i" in the Jarwick wordmark. Same shader, glow and rings.
+   */
+  readonly shape?: OrbShape;
   /**
    * Honour the OS reduce-motion setting. Defaults to true. When reduced motion
    * is active the engine slows its own animation clock rather than scaling

@@ -43,6 +43,8 @@ function buildScene(initialState: OrbState = 'idle'): OrbSceneHandle {
     performanceMode: initialPerf,
     respectReducedMotion: query.get('motion') !== 'full',
     syntheticAudioFallback: query.get('audio') !== 'off',
+    // ?shape=orb brings back the sphere; the candle is the default look.
+    shape: query.get('shape') === 'orb' ? 'orb' : 'wick',
     ...(Number.isFinite(seedParam) && seedParam !== 0 ? { seed: seedParam } : {}),
   });
 }
