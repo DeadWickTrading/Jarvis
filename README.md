@@ -20,6 +20,11 @@ scripts/               token generation, the screenshot harness, a PNG reader
 
 ## Quick start
 
+Needs **Node 22 LTS** (`.nvmrc` pins 22.23.3, which is what CI builds against).
+On macOS the simplest route is the `.pkg` installer from nodejs.org — pick the
+version first, then download. `git` already comes with the Xcode Command Line
+Tools.
+
 ```bash
 npm install
 npm run dev          # http://127.0.0.1:5173

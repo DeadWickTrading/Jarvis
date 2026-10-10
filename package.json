@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.1.0",
   "description": "A living galaxy face for Jarvis: wireframe orb, nebula sky and a star network that answers the AI's voice.",
+  "engines": {
+    "node": ">=22.12"
+  },
   "type": "module",
   "workspaces": [
     "packages/*",
