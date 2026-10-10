@@ -50,13 +50,19 @@ export interface AgentConnection {
 interface TokenResponse {
   access_token?: string;
   error?: string;
+  /** Whatever the upstream said, which is usually the specific reason. */
+  detail?: string;
 }
 
 async function mintToken(endpoint: string): Promise<string> {
   const response = await fetch(endpoint, { method: 'POST' });
   const body = (await response.json().catch(() => ({}))) as TokenResponse;
   if (!response.ok || !body.access_token) {
-    throw new Error(body.error ?? `Could not mint an agent token (${response.status}).`);
+    const reason = body.error ?? `Could not mint an agent token (${response.status}).`;
+    // Deepgram's own message is what actually identifies the problem;
+    // dropping it leaves the user guessing between a wrong key and a key
+    // without the right permissions.
+    throw new Error(body.detail ? `${reason} Deepgram said: ${body.detail}` : reason);
   }
   return body.access_token;
 }

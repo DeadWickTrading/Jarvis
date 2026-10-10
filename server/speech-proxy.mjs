@@ -223,11 +223,19 @@ export function createTtsProxy({ env = process.env, fetchImpl = globalThis.fetch
 
         if (!grant.ok) {
           const detail = await grant.text().catch(() => '');
+          // A key that works for synthesis can still be refused here:
+          // /v1/auth/grant needs Member permissions or higher, while a
+          // usage-only key is enough for /v1/speak. Saying so turns a dead
+          // end into a two-minute fix in the Deepgram console.
+          const hint =
+            grant.status === 401 || grant.status === 403
+              ? 'Deepgram rejected the API key when minting an agent token. ' +
+                'Minting needs a key with Member permissions or higher — a usage-only ' +
+                'key works for speech but not for the agent. Check the key, or make a ' +
+                'new one with Member rights at console.deepgram.com.'
+              : `Deepgram returned ${grant.status} when minting an agent token.`;
           sendJson(res, grant.status === 401 || grant.status === 403 ? 502 : grant.status, {
-            error:
-              grant.status === 401 || grant.status === 403
-                ? 'Deepgram rejected the API key when minting an agent token.'
-                : `Deepgram returned ${grant.status} when minting an agent token.`,
+            error: hint,
             detail: detail.slice(0, 400),
           });
           return;
