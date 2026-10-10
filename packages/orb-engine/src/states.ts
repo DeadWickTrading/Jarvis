@@ -192,9 +192,29 @@ const TRANSITION_RATE = rateFromPerFrame(0.06);
 /** Colour crossfades a touch slower so hue changes read as a flow, not a flip. */
 const COLOR_RATE = rateFromPerFrame(0.045);
 
+const deepViolet = mixRgb(secondary, ink, 0.35);
+const orange = mixRgb(amber, red, 0.35);
+
+/**
+ * The violet palette: P2P violet at rest, cyan while listening, amber to
+ * orange while thinking, Wick lime while speaking. Same motion as the default
+ * table; only colours change, plus a slightly more solid body at rest.
+ */
+export const VIOLET_TABLE: Readonly<Record<OrbState, StateTargets>> = {
+  ...STATE_TABLE,
+  idle: { ...STATE_TABLE.idle, color: secondary, colorSecondary: deepViolet, opacity: 0.46 },
+  arming: { ...STATE_TABLE.arming, color: mixRgb(cyan, ink, 0.45), colorSecondary: cyan },
+  listening: { ...STATE_TABLE.listening, color: cyan, colorSecondary: secondary },
+  processing: { ...STATE_TABLE.processing, color: amber, colorSecondary: orange },
+  speaking: { ...STATE_TABLE.speaking, color: accent, colorSecondary: teal },
+};
+
 /** Build a parameter set sitting exactly on a state's targets. */
-export function initialParams(state: OrbState): SceneParams {
-  const t = STATE_TABLE[state];
+export function initialParams(
+  state: OrbState,
+  table: Readonly<Record<OrbState, StateTargets>> = STATE_TABLE,
+): SceneParams {
+  const t = table[state];
   const params = {
     color: [...t.color] as [number, number, number],
     colorSecondary: [...t.colorSecondary] as [number, number, number],
@@ -209,8 +229,13 @@ export function initialParams(state: OrbState): SceneParams {
  * Mutates and returns `params`. Frame-rate independent: the result depends on
  * total elapsed time, not on how many steps it was split into.
  */
-export function stepParams(params: SceneParams, state: OrbState, dt: number): SceneParams {
-  const t = STATE_TABLE[state];
+export function stepParams(
+  params: SceneParams,
+  state: OrbState,
+  dt: number,
+  table: Readonly<Record<OrbState, StateTargets>> = STATE_TABLE,
+): SceneParams {
+  const t = table[state];
   for (const key of SCALAR_KEYS) {
     params[key] = approach(params[key], t[key], TRANSITION_RATE, dt);
   }

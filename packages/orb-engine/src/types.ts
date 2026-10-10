@@ -105,6 +105,11 @@ export interface OrbSceneOptions {
    */
   readonly trades?: boolean;
   /**
+   * Colour scheme. `lime` (default) is the original; `violet` rests in P2P
+   * violet, listens in cyan, thinks in amber/orange and speaks in Wick lime.
+   */
+  readonly palette?: 'lime' | 'violet';
+  /**
    * Honour the OS reduce-motion setting. Defaults to true. When reduced motion
    * is active the engine slows its own animation clock rather than scaling
    * elapsed time, so phases stay continuous across the change.

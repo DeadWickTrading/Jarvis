@@ -105,6 +105,7 @@ uniform float uOpacity;
 uniform float uFresnelPower;
 uniform float uGlow;
 uniform float uTintScale;
+uniform float uFloor;
 
 varying float vDisp;
 varying vec3 vNormalView;
@@ -123,7 +124,7 @@ void main() {
   // A small floor keeps the mesh faintly readable across the whole sphere;
   // the rim is where the brightness lives, so the face we look straight at is
   // close to invisible and the silhouette reads as a thin bright edge.
-  float strength = uOpacity * (0.08 + 0.92 * fresnel) * (0.45 + uGlow * 0.5);
+  float strength = uOpacity * (uFloor + (1.0 - uFloor) * fresnel) * (0.45 + uGlow * 0.5);
 
   // Additive blending multiplies the source by its own alpha, so anything put
   // in the alpha channel would be applied twice. The magnitude belongs in the
@@ -250,6 +251,8 @@ export class OrbPass implements ScenePass {
         uFresnelPower: { value: 2.7 },
         uGlow: { value: 0.35 },
         uTintScale: { value: 3 },
+        // How visible the face pointing at us is. The candle reads as a solid body.
+        uFloor: { value: shape === 'wick' ? 0.3 : 0.08 },
       },
       wireframe: true,
       transparent: true,

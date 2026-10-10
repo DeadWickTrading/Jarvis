@@ -52,10 +52,19 @@ void main() {
 
 const POINT_FRAGMENT = /* glsl */ `
 uniform float uBrightness;
+uniform float uSquare;
 
 varying vec3 vColor;
 
 void main() {
+  if (uSquare > 0.5) {
+    // Trades print as squares: a solid block with a thin glow around it.
+    vec2 q = abs(gl_PointCoord - vec2(0.5)) * 2.0;
+    float m = max(q.x, q.y);
+    float block = m < 0.5 ? 1.0 : pow(max(0.0, 1.0 - (m - 0.5) / 0.5), 2.0) * 0.35;
+    gl_FragColor = vec4(vColor * block * uBrightness, 1.0);
+    return;
+  }
   // gl_PointCoord runs 0..1 across the sprite; this is the distance from the
   // centre as a fraction of the radius.
   float d = length(gl_PointCoord - vec2(0.5)) * 2.0;
@@ -116,6 +125,7 @@ export class NetworkPass implements ScenePass {
         uSizeScale: { value: 700 },
         uNodeSize: { value: 0.42 },
         uBrightness: { value: 0.8 },
+        uSquare: { value: trades ? 1 : 0 },
       },
       vertexColors: true,
       transparent: true,
@@ -124,6 +134,7 @@ export class NetworkPass implements ScenePass {
     });
 
     this.dustMaterial = this.nodeMaterial.clone();
+    this.dustMaterial.uniforms.uSquare!.value = 0;
     this.dustMaterial.uniforms.uNodeSize!.value = 0.16;
     this.dustMaterial.uniforms.uBrightness!.value = 0.5;
 

@@ -46,6 +46,7 @@ function buildScene(initialState: OrbState = 'idle'): OrbSceneHandle {
     // ?shape=orb brings back the sphere; the candle is the default look.
     shape: query.get('shape') === 'orb' ? 'orb' : 'wick',
     trades: query.get('trades') !== 'off',
+    palette: query.get('palette') === 'lime' ? 'lime' : 'violet',
     ...(Number.isFinite(seedParam) && seedParam !== 0 ? { seed: seedParam } : {}),
   });
 }

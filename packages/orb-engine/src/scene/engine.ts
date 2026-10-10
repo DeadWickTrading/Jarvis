@@ -5,7 +5,7 @@ import { analyseBins, createLevelSmoother } from '../audio/levels.js';
 import { syntheticLevels } from '../audio/synthetic.js';
 import { createAudioContextHolder, createAudioTap, type AudioTap } from '../audio/tap.js';
 import { createPerfMonitor } from '../perf.js';
-import { activityLevel, cycledColor, initialParams, stepParams, STATE_TABLE } from '../states.js';
+import { activityLevel, cycledColor, initialParams, stepParams, STATE_TABLE, VIOLET_TABLE } from '../states.js';
 import type { SceneParams } from '../states.js';
 import type {
   AudioLevels,
@@ -61,6 +61,7 @@ export class OrbEngine implements OrbSceneHandle {
 
   private readonly passes: ScenePass[];
   private readonly orbPass: OrbPass;
+  private readonly table: typeof STATE_TABLE;
   private skyPass!: SkyPass;
 
   private readonly params: SceneParams;
@@ -103,7 +104,8 @@ export class OrbEngine implements OrbSceneHandle {
     // Start *on* the initial state rather than easing into it from idle,
     // which would otherwise show the orb morphing out of the wrong colour on
     // every page load that opens in a non-idle state.
-    this.params = initialParams(this.state);
+    this.table = options.palette === 'violet' ? VIOLET_TABLE : STATE_TABLE;
+    this.params = initialParams(this.state, this.table);
     this.perfMode = options.performanceMode ?? 'auto';
     this.tier = this.perfMode === 'low' ? 'low' : 'high';
     this.maxPixelRatio = options.maxPixelRatio ?? 2;
@@ -358,7 +360,7 @@ export class OrbEngine implements OrbSceneHandle {
     // Animation integrates the capped value.
     const dt = clamp(elapsed, 0, MAX_FRAME_SECONDS);
 
-    stepParams(this.params, this.state, dt);
+    stepParams(this.params, this.state, dt, this.table);
     this.audio = this.sampleAudio(dt);
 
     const route = STATE_TABLE[this.state].audioRoute;
