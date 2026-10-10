@@ -9,6 +9,10 @@ brightens and swells while it talks.
 Quiet until it matters. At rest it should look like a mind idling in deep
 space. If it ever looks busy when nothing is happening, turn it down.
 
+**Putting this in another page?** `INTEGRATION.md` is the handover: the map,
+three levels of integration, and every trap that cost real debugging time.
+`examples/embed.html` is the minimal working version.
+
 ```
 packages/orb-engine    the engine: framework-free TypeScript, three.js, no backend
 packages/voice         speech: browser synthesis, Deepgram Aura, an ElevenLabs

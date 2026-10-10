@@ -11,7 +11,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/voice.js"
-    }
+    },
+    "./standalone": "./dist/jarvis.standalone.js"
   },
   "files": [
     "dist",
@@ -19,8 +20,9 @@
   ],
   "sideEffects": false,
   "scripts": {
-    "build": "vite build && tsc -p tsconfig.build.json",
-    "test": "vitest run"
+    "build": "vite build && vite build --config vite.standalone.config.ts && tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "build:standalone": "vite build --config vite.standalone.config.ts"
   },
   "dependencies": {
     "@deadwick/orb-engine": "0.1.0"

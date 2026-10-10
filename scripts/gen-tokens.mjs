@@ -115,11 +115,21 @@ const COLOUR_ALLOWLIST = new Set(
     'packages/orb-engine/src/brand.ts',
     'apps/demo/src/styles/tokens.css',
     'apps/demo/public/favicon.svg',
+    // A copy-and-paste starting point for another project, deliberately
+    // self-contained rather than wired to this repo's tokens.
+    'examples/embed.html',
     'scripts/gen-tokens.mjs',
   ].map((p) => p.split('/').join(sep)),
 );
 
-const SCAN_DIRS = ['packages/orb-engine/src', 'apps/demo/src', 'apps/demo/public', 'scripts'];
+const SCAN_DIRS = [
+  'packages/orb-engine/src',
+  'packages/voice/src',
+  'apps/demo/src',
+  'apps/demo/public',
+  'examples',
+  'scripts',
+];
 const SCAN_EXT = /\.(ts|tsx|css|mjs|js|html|svg)$/;
 // Generated declarations mirror whatever their source says, including the
 // palette's own literals. The lint polices authored code.
