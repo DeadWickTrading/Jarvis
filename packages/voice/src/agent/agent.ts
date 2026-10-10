@@ -17,6 +17,11 @@ export interface VoiceAgentOptions {
   readonly onStatus?: (status: AgentStatus) => void;
   readonly onInfo?: (message: string) => void;
   readonly onError?: (error: Error) => void;
+  /**
+   * Client-side tools, by function name. Each gets the parsed arguments and
+   * returns the text the model sees. `end_conversation` is built in.
+   */
+  readonly functions?: Readonly<Record<string, (args: Record<string, unknown>) => Promise<string> | string>>;
 }
 
 export interface VoiceAgent {
@@ -150,18 +155,35 @@ export function createVoiceAgent(options: VoiceAgentOptions): VoiceAgent {
     for (const entry of functions as Record<string, unknown>[]) {
       const name = String(entry.name ?? event.function_name ?? '');
       const id = entry.id ?? event.function_call_id ?? event.id;
-
-      connection?.send({
-        type: 'FunctionCallResponse',
-        id,
-        name,
-        content: JSON.stringify({ ok: true }),
-      });
+      const reply = (content: string): void => {
+        connection?.send({ type: 'FunctionCallResponse', id, name, content });
+      };
 
       if (name === 'end_conversation') {
+        reply(JSON.stringify({ ok: true }));
         options.onInfo?.('Jarwick ended the conversation.');
         void setMicOpen(false);
+        continue;
       }
+
+      const handler = options.functions?.[name];
+      if (!handler) {
+        reply(JSON.stringify({ ok: false, error: `No tool called ${name} here.` }));
+        continue;
+      }
+      let args: Record<string, unknown> = {};
+      try {
+        const raw = entry.arguments ?? entry.input ?? '{}';
+        args = typeof raw === 'string' ? (JSON.parse(raw || '{}') as Record<string, unknown>) : (raw as Record<string, unknown>);
+      } catch {
+        args = {};
+      }
+      Promise.resolve()
+        .then(() => handler(args))
+        .then(
+          (text) => reply(String(text)),
+          (error: unknown) => reply(`Tool ${name} failed: ${error instanceof Error ? error.message : String(error)}`),
+        );
     }
   }
 

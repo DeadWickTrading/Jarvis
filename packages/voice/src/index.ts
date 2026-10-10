@@ -29,6 +29,7 @@ export {
 export type { VoiceLike, VoicePreference, VoiceChoice } from './voices.js';
 
 export { createVoiceAgent } from './agent/agent.js';
+export { createHqTools } from './agent/hq-tools.js';
 export type { VoiceAgent, VoiceAgentOptions } from './agent/agent.js';
 export { connectAgent, DEFAULT_AGENT_URL, DEFAULT_AUTH_STRATEGIES } from './agent/connection.js';
 export type { AgentAuthStrategy, AgentConnection } from './agent/connection.js';

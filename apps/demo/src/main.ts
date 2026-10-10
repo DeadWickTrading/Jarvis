@@ -7,6 +7,7 @@ import {
   createSceneSink,
   createSpeaker,
   createVoiceAgent,
+  createHqTools,
 } from '@deadwick/voice';
 import type { Speaker, VoiceAgent, VoiceAvailability, VoiceProvider } from '@deadwick/voice';
 import { JARWICK_AGENT_SETTINGS } from './agent-settings.js';
@@ -384,6 +385,7 @@ const agent: VoiceAgent = createVoiceAgent({
   },
   sink: sceneSink,
   settings: agentSettings,
+  functions: createHqTools(),
   ...(agentUrlOverride ? { url: agentUrlOverride } : {}),
   onStatus: (status) => {
     talkButton.setAttribute('aria-pressed', String(status.micOpen));

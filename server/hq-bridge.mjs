@@ -6,12 +6,17 @@
  *                               agent relay are allowed)
  *   GET /api/hq/context         a compact text snapshot of HQ for the model
  *   GET /api/hq/agent-settings  the Voice Agent settings with that snapshot
- *                               appended to the prompt
+ *                               appended to the prompt, plus Jarwick's tools
+ *   GET /api/hq/live            last price from ATAS (DL Sweep Meter writes
+ *                               journal/live_NQ.json, live_ES.json) and the
+ *                               distance to every play
+ *   POST /api/hq/idea           append a trade idea Henrik discussed with
+ *                               Jarwick to NQ-Cockpit/data/jarwick_ideas.csv
  *
- * Plain Node, no build step. Read-only: nothing here writes to the HQ folder.
+ * Plain Node, no build step. The only write is the idea log.
  * HQ_DIR overrides the folder; the default is Henrik's NQ-Cockpit.
  */
-import { readFile } from 'node:fs/promises';
+import { appendFile, readFile, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 
@@ -102,12 +107,80 @@ export function buildContext(bias, journal, now = new Date()) {
 
 const RULES = [
   '',
-  '#HQ snapshot',
-  'Below is a read-only snapshot of Henrik\'s HQ page (his morning edition, plays, levels, news and trading journal).',
+  '#HQ snapshot and tools',
+  'Below is a snapshot of Henrik\'s HQ page (his morning edition, plays, levels, news and trading journal) taken when the call started.',
   'Answer questions about it directly and briefly. Quote levels exactly as written. If the edition is from an earlier day, say so before using it.',
-  'If something is not in the snapshot, say you do not have it. Never invent prices, levels or results. You have no live price feed.',
+  'Tools: call get_live_price whenever price, distance to a play or "where are we" matters - never guess a price. Call refresh_hq before answering about plays or the plan if the call has run more than a few minutes, because Henrik updates HQ during the session.',
+  'Trade ideas: when Henrik describes a trade idea, check it against the plays, his rules (attempts per level, red news, size and risk limits, the flip) and the live price, give your view in two or three sentences, then call log_trade_idea once with a short summary. Do not call it for casual questions.',
+  'If something is not in the snapshot or the tools, say you do not have it. Never invent prices, levels or results.',
   '',
 ];
+
+/** Jarwick's client-side tools (answered by HQ through the bridge). */
+export const HQ_FUNCTIONS = [
+  {
+    name: 'get_live_price',
+    description: 'Last NQ and ES price from ATAS and the distance in points to every play zone. Use whenever price or distance matters.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'refresh_hq',
+    description: 'Re-read HQ now (plays, levels, news, journal) - plans change during the session.',
+    parameters: { type: 'object', properties: {} },
+  },
+  {
+    name: 'log_trade_idea',
+    description: 'Save a trade idea Henrik discussed, with your view, so it can be reviewed later.',
+    parameters: {
+      type: 'object',
+      properties: {
+        instrument: { type: 'string', description: 'NQ, MNQ, ES or MES' },
+        side: { type: 'string', description: 'long or short' },
+        level: { type: 'string', description: 'Price or zone, e.g. 31,300 or Short 1' },
+        idea: { type: 'string', description: 'The idea in one sentence, in Henrik\'s words' },
+        view: { type: 'string', description: 'Your view in one or two sentences' },
+        flags: { type: 'string', description: 'Rule flags, e.g. third attempt, red news in 4 min, not a plan level; empty if none' },
+      },
+      required: ['idea', 'view'],
+    },
+  },
+];
+
+/** "31,228-31,300" or "30,975" -> [low, high]; null when no number. Pure. */
+export function zoneRange(zone) {
+  const nums = String(zone ?? '').replace(/(\d),(\d{3})/g, '$1$2').match(/\d+(?:\.\d+)?/g);
+  if (!nums) return null;
+  const v = nums.map(Number).filter((n) => n > 1000);
+  if (!v.length) return null;
+  return [Math.min(...v), Math.max(...v)];
+}
+
+/** Text report of live prices and distances to plays. Pure. */
+export function liveReport(bias, live, now = new Date()) {
+  const out = [];
+  const fmt = (n) => Number(n).toLocaleString('en-US', { maximumFractionDigits: 2 });
+  for (const [fam, rows] of [['NQ', bias?.plays?.rows ?? []], ['ES', bias?.plays?.esRows ?? []]]) {
+    const l = live[fam];
+    if (!l) {
+      out.push(`${fam}: no live price (ATAS is not running with DL Sweep Meter on a ${fam} chart).`);
+      continue;
+    }
+    const age = Math.round((now - new Date(l.time)) / 1000);
+    const stale = age > 120 ? ` STALE: last update ${Math.round(age / 60)} min ago, market may be closed or ATAS off.` : '';
+    out.push(`${fam} last ${fmt(l.price)} (${l.symbol}, ${age}s ago).${stale}`);
+    for (const r of rows) {
+      const z = zoneRange(r.zone);
+      if (!z) continue;
+      const [lo, hi] = z;
+      const where = l.price < lo ? `${fmt(lo - l.price)} pts below it` : l.price > hi ? `${fmt(l.price - hi)} pts above it` : 'price is INSIDE the zone';
+      out.push(`- ${r.id} (${r.side}) ${r.zone}: ${where}`);
+    }
+  }
+  return out.join('\n');
+}
+
+const csvCell = (v) => `"${String(v ?? '').replace(/"/g, '""').replace(/[\r\n]+/g, ' ').slice(0, 500)}"`;
+export const IDEA_HEADER = 'time,instrument,side,level,idea,jarwick_view,rule_flags,price_at_idea';
 
 /** Settings with the snapshot appended to the agent prompt. Pure. */
 export function settingsWithContext(settings, context) {
@@ -116,6 +189,8 @@ export function settingsWithContext(settings, context) {
   if (think) {
     const base = String(think.prompt ?? '').replace(/You have no live market data or access to Henrik's files yet\.[^.]*\.[^.]*\.\s*/, '');
     think.prompt = `${base}\n${RULES.join('\n')}\n${context}`;
+    const have = new Set((think.functions ?? []).map((f) => f.name));
+    think.functions = [...(think.functions ?? []), ...HQ_FUNCTIONS.filter((f) => !have.has(f.name))];
   }
   return copy;
 }
@@ -124,9 +199,57 @@ export function createHqBridge({ hqDir = process.env.HQ_DIR || DEFAULT_HQ_DIR, s
   const root = resolve(hqDir);
   const page = join(root, 'NQ-Cockpit.html');
 
+  const journalDir = resolve(root, '..', 'journal');
+  const ideaLog = join(root, 'data', 'jarwick_ideas.csv');
+
   const snapshot = async () => {
     const html = await readFile(page, 'utf8');
     return buildContext(jsonBlock(html, 'nq-bias'), jsonBlock(html, 'dl-journal'));
+  };
+
+  const readLive = async () => {
+    const live = {};
+    for (const fam of ['NQ', 'ES']) {
+      try {
+        live[fam] = JSON.parse(await readFile(join(journalDir, `live_${fam}.json`), 'utf8'));
+      } catch {
+        /* no file yet */
+      }
+    }
+    return live;
+  };
+
+  const liveText = async () => {
+    const html = await readFile(page, 'utf8');
+    return liveReport(jsonBlock(html, 'nq-bias'), await readLive());
+  };
+
+  const readBody = (req) =>
+    new Promise((ok, fail) => {
+      let data = '';
+      req.on('data', (c) => {
+        data += c;
+        if (data.length > 20_000) fail(new Error('body too large'));
+      });
+      req.on('end', () => ok(data));
+      req.on('error', fail);
+    });
+
+  const logIdea = async (body) => {
+    const i = JSON.parse(body || '{}');
+    const live = await readLive();
+    const fam = /^m?es/i.test(i.instrument ?? '') ? 'ES' : 'NQ';
+    let exists = true;
+    try {
+      await stat(ideaLog);
+    } catch {
+      exists = false;
+    }
+    const row = [new Date().toISOString(), i.instrument, i.side, i.level, i.idea, i.view, i.flags, live[fam]?.price ?? '']
+      .map(csvCell)
+      .join(',');
+    await appendFile(ideaLog, `${exists ? '' : `${IDEA_HEADER}\n`}${row}\n`, 'utf8');
+    return 'Saved to the idea log.';
   };
 
   return async function handleHq(req, res, next) {
@@ -155,6 +278,17 @@ export function createHqBridge({ hqDir = process.env.HQ_DIR || DEFAULT_HQ_DIR, s
       if (path === '/api/hq/context') {
         res.setHeader('Content-Type', 'text/plain; charset=utf-8');
         res.end(await snapshot());
+        return;
+      }
+      if (path === '/api/hq/live') {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Cache-Control', 'no-store');
+        res.end(await liveText());
+        return;
+      }
+      if (path === '/api/hq/idea' && req.method === 'POST') {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.end(await logIdea(await readBody(req)));
         return;
       }
       if (path === '/api/hq/agent-settings') {
