@@ -122,6 +122,14 @@ export interface OrbSceneHandle {
   getPerformanceTier(): PerformanceTier;
   /** The voice envelope used for the most recent frame. */
   getAudioLevels(): AudioLevels;
+  /**
+   * The engine's AudioContext, created on first use.
+   *
+   * Any `AudioNode` passed to {@link setMicSource} or {@link setPlaybackSource}
+   * must belong to this context: Web Audio refuses to connect nodes across
+   * contexts. A host synthesising its own audio should build it here.
+   */
+  getAudioContext(): AudioContext;
   /** Frames per second, averaged over the last second. */
   getFps(): number;
   /** Stop the loop, release the WebGL context and dispose every resource. */

@@ -38,6 +38,8 @@ const SEMANTIC = {
   'text-muted': 'var(--dw-muted)',
   'text-dim': 'var(--dw-dim)',
   focus: 'var(--dw-accent)',
+  /* Repointed from script to the current state's colour. */
+  state: 'var(--dw-accent)',
   'state-idle': 'var(--dw-accent)',
   'state-arming': 'var(--dw-listening)',
   'state-listening': 'var(--dw-listening)',
@@ -138,9 +140,11 @@ function lintColours() {
       if (COLOUR_ALLOWLIST.has(rel)) continue;
       const source = readFileSync(file, 'utf8');
       source.split('\n').forEach((line, i) => {
-        // `rgb(... / a)` built from a token triple is the sanctioned way to
-        // make a translucent variant, so it is not an offence.
-        const usesToken = line.includes('var(--dw-');
+        // Functional notation built from a custom property is the sanctioned
+        // way to make a translucent or mixed variant: rgb(var(--dw-x-rgb) / a)
+        // and color-mix(in srgb, var(--chip) 12%, transparent) both ultimately
+        // resolve to a palette token. A literal with no var() does not.
+        const usesToken = line.includes('var(--');
         for (const m of line.matchAll(HEX)) {
           offences.push(`${rel}:${i + 1}  colour literal ${m[0]}`);
         }

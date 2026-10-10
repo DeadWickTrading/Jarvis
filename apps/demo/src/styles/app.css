@@ -1,6 +1,9 @@
 /*
- * Demo chrome. Every colour here is a token from tokens.css; there are no
- * colour literals in this file, and `npm run lint:tokens` enforces that.
+ * Demo chrome.
+ *
+ * Every colour here comes from a token in tokens.css, which is generated from
+ * the engine's brand palette. There are no colour literals in this file and
+ * `npm run lint:tokens` fails the build if one appears.
  */
 
 *,
@@ -24,11 +27,10 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* The scene fills the viewport and everything else floats over it. */
+/* The scene fills the viewport; everything else floats over it. */
 #scene {
   position: fixed;
   inset: 0;
-  /* The canvas is the only child that paints; stacking context for the UI. */
   z-index: 0;
 }
 
@@ -37,6 +39,8 @@ body {
   width: 100%;
   height: 100%;
 }
+
+/* --- wordmark ------------------------------------------------------------ */
 
 .wordmark {
   position: fixed;
@@ -55,4 +59,199 @@ body {
 
 .wordmark span {
   color: var(--dw-accent);
+}
+
+/* --- readout ------------------------------------------------------------- */
+
+.readout {
+  position: fixed;
+  top: clamp(16px, 3vh, 34px);
+  right: clamp(16px, 3vw, 34px);
+  z-index: 1;
+  width: 11rem;
+  text-align: right;
+  font-family: var(--dw-font-mono);
+  pointer-events: none;
+}
+
+.readout__state {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dw-state);
+  transition: color 320ms ease;
+}
+
+.readout__meta {
+  margin: 0.3rem 0 0;
+  font-size: 0.7rem;
+  font-weight: 400;
+  letter-spacing: 0.06em;
+  color: var(--dw-text-dim);
+}
+
+.readout__dot {
+  opacity: 0.6;
+}
+
+.meter {
+  margin-top: 0.55rem;
+  margin-left: auto;
+  width: 100%;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--dw-hairline);
+  overflow: hidden;
+}
+
+.meter__fill {
+  display: block;
+  width: 0%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--dw-state);
+  transform-origin: left center;
+}
+
+/* --- controls ------------------------------------------------------------ */
+
+.controls {
+  position: fixed;
+  left: 50%;
+  bottom: clamp(16px, 3.5vh, 34px);
+  z-index: 1;
+  transform: translateX(-50%);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: clamp(0.75rem, 2vw, 1.75rem);
+  padding: clamp(0.75rem, 1.6vw, 1rem) clamp(0.9rem, 2vw, 1.4rem);
+  max-width: min(60rem, calc(100vw - 2 * clamp(16px, 3vw, 34px)));
+  border: 1px solid var(--dw-hairline);
+  border-radius: 14px;
+  background: rgb(var(--dw-panel-rgb) / 0.74);
+  backdrop-filter: blur(14px);
+}
+
+.controls__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.controls__legend {
+  margin: 0;
+  font-family: var(--dw-font-mono);
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--dw-text-dim);
+}
+
+.controls__row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.chip {
+  --chip: var(--dw-text-muted);
+
+  padding: 0.42rem 0.75rem;
+  border: 1px solid var(--dw-hairline);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dw-text-muted);
+  font-family: var(--dw-font-mono);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition:
+    color 180ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.chip:hover {
+  color: var(--dw-text-strong);
+  border-color: var(--dw-text-dim);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--dw-focus);
+  outline-offset: 2px;
+}
+
+/* Each state carries its own colour, so the control reads like the scene. */
+.chip[data-state='idle'] { --chip: var(--dw-state-idle); }
+.chip[data-state='arming'] { --chip: var(--dw-state-arming); }
+.chip[data-state='listening'] { --chip: var(--dw-state-listening); }
+.chip[data-state='processing'] { --chip: var(--dw-state-processing); }
+.chip[data-state='speaking'] { --chip: var(--dw-state-speaking); }
+.chip[data-state='error'] { --chip: var(--dw-state-error); }
+.chip#mic-button { --chip: var(--dw-state-listening); }
+.chip#tone-button { --chip: var(--dw-state-speaking); }
+.chip[data-perf] { --chip: var(--dw-cyan); }
+
+.chip[aria-pressed='true'] {
+  color: var(--chip);
+  border-color: color-mix(in srgb, var(--chip) 55%, transparent);
+  background: color-mix(in srgb, var(--chip) 12%, transparent);
+}
+
+.chip[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* --- hint ---------------------------------------------------------------- */
+
+.hint {
+  position: fixed;
+  left: 50%;
+  bottom: 4px;
+  z-index: 1;
+  transform: translateX(-50%);
+  margin: 0;
+  font-family: var(--dw-font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  color: var(--dw-text-dim);
+  pointer-events: none;
+}
+
+.hint kbd {
+  font-family: inherit;
+  color: var(--dw-text-muted);
+}
+
+@media (max-width: 40rem) {
+  .hint {
+    display: none;
+  }
+
+  .readout {
+    width: 8rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chip,
+  .readout__state {
+    transition-duration: 1ms;
+  }
+}
+
+/* Scene-only mode: everything but the canvas is hidden. Used by the visual
+   tests whose subject is the render itself. */
+.scene-only .wordmark,
+.scene-only .readout,
+.scene-only .controls,
+.scene-only .hint {
+  display: none;
 }

@@ -58,6 +58,7 @@
   --dw-text-muted: var(--dw-muted);
   --dw-text-dim: var(--dw-dim);
   --dw-focus: var(--dw-accent);
+  --dw-state: var(--dw-accent);
   --dw-state-idle: var(--dw-accent);
   --dw-state-arming: var(--dw-listening);
   --dw-state-listening: var(--dw-listening);

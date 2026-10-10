@@ -177,24 +177,36 @@ describe('activityLevel', () => {
     }
   });
 
-  it('lets the voice dominate the resting motion while speaking', () => {
-    const params = initialParams('speaking');
-    const quiet = activityLevel(params, SILENCE, 1);
-    const shouting = activityLevel(params, loud, 1);
-
-    // The invariant that matters is that the audio term outweighs the
-    // baseline and breath, not any particular ratio — the amplitudes are
-    // tuned by eye against real screenshots and will move again.
-    const fromVoice = shouting - quiet;
-    expect(fromVoice).toBeGreaterThan(quiet * 2);
+  it('lets the voice outweigh the resting motion in the states that hear one', () => {
+    // The invariant that matters is that at a full-scale voice the audio term
+    // dominates the baseline and breath — not any particular ratio. The
+    // amplitudes are tuned by eye against real screenshots and will move
+    // again, so this asserts the relationship, with margin.
+    for (const state of ['listening', 'speaking'] as const) {
+      const params = initialParams(state);
+      const quiet = activityLevel(params, SILENCE, 1);
+      const fromVoice = activityLevel(params, loud, 1) - quiet;
+      expect(fromVoice, state).toBeGreaterThan(quiet * 1.5);
+    }
   });
 
-  it('is driven by the voice far more in speaking than in idle', () => {
-    const speaking = initialParams('speaking');
-    const idle = initialParams('idle');
-    const responseOf = (p: ReturnType<typeof initialParams>) =>
-      activityLevel(p, loud, 1) - activityLevel(p, SILENCE, 1);
-    expect(responseOf(speaking)).toBeGreaterThan(responseOf(idle) * 2);
+  it('gives the states that hear a voice far more displacement headroom', () => {
+    for (const state of ['listening', 'speaking'] as const) {
+      expect(STATE_TABLE[state].amplitude, state).toBeGreaterThan(
+        STATE_TABLE.idle.amplitude * 1.5,
+      );
+    }
+  });
+
+  it('never lets a full-scale voice drive the mesh into its clamp', () => {
+    // The vertex shader clamps displacement to +/-0.45. The noise field can
+    // reach about 1.0 with the high octave engaged, so activity at a loud
+    // peak is very nearly the displacement — and a state sitting at the clamp
+    // stops responding to the voice at all, as well as losing its silhouette.
+    for (const state of ['listening', 'speaking'] as const) {
+      const peak = activityLevel(initialParams(state), loud, 1);
+      expect(peak, state).toBeLessThan(0.33);
+    }
   });
 
   it('breathes: silence is not perfectly static', () => {

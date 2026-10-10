@@ -6,6 +6,7 @@ import { syntheticLevels } from '../audio/synthetic.js';
 import { createAudioContextHolder, createAudioTap, type AudioTap } from '../audio/tap.js';
 import { createPerfMonitor } from '../perf.js';
 import { activityLevel, cycledColor, initialParams, stepParams, STATE_TABLE } from '../states.js';
+import type { SceneParams } from '../states.js';
 import type {
   AudioLevels,
   AudioTapSource,
@@ -51,7 +52,7 @@ export class OrbEngine implements OrbSceneHandle {
   private readonly orbPass: OrbPass;
   private skyPass!: SkyPass;
 
-  private readonly params = initialParams('idle');
+  private readonly params: SceneParams;
   private state: OrbState;
 
   /** Reduced-motion-scaled clock driving every visual phase. */
@@ -88,6 +89,10 @@ export class OrbEngine implements OrbSceneHandle {
   constructor(container: HTMLElement, options: OrbSceneOptions = {}) {
     this.container = container;
     this.state = options.initialState ?? 'idle';
+    // Start *on* the initial state rather than easing into it from idle,
+    // which would otherwise show the orb morphing out of the wrong colour on
+    // every page load that opens in a non-idle state.
+    this.params = initialParams(this.state);
     this.perfMode = options.performanceMode ?? 'auto';
     this.tier = this.perfMode === 'low' ? 'low' : 'high';
     this.maxPixelRatio = options.maxPixelRatio ?? 2;
@@ -174,6 +179,10 @@ export class OrbEngine implements OrbSceneHandle {
     return this.audio;
   }
 
+  getAudioContext(): AudioContext {
+    return this.audioHolder.get();
+  }
+
   getFps(): number {
     return this.perf.fps();
   }
@@ -225,7 +234,8 @@ export class OrbEngine implements OrbSceneHandle {
       return createAudioTap(source, this.audioHolder);
     } catch (error) {
       // A failed tap must never take the scene down with it; the synthetic
-      // envelope covers for it and the orb keeps moving.
+      // envelope covers for it and the orb keeps moving. It is still a real
+      // fault, so it is reported rather than swallowed.
       console.warn('[orb-engine] could not tap audio source:', error);
       return null;
     }
@@ -282,9 +292,12 @@ export class OrbEngine implements OrbSceneHandle {
     let raw = SILENCE;
 
     if (route === 'mic' && this.micTap) {
-      raw = analyseBins(this.micTap.read());
+      raw = analyseBins(this.micTap.read(), { sampleRate: this.micTap.sampleRate });
     } else if (route === 'playback' && this.playbackTap) {
-      raw = analyseBins(this.playbackTap.read(), PLAYBACK_BANDS);
+      raw = analyseBins(this.playbackTap.read(), {
+        ...PLAYBACK_BANDS,
+        sampleRate: this.playbackTap.sampleRate,
+      });
     } else if (route !== 'none' && this.syntheticFallback) {
       raw = syntheticLevels(this.audioClock);
     }

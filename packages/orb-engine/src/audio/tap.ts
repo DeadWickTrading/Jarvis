@@ -9,12 +9,20 @@ import type { AudioTapSource } from '../types.js';
 export interface AudioTap {
   /** Frequency bins for the current moment, 0..255 per bin. */
   read(): Uint8Array;
+  /** Sample rate of the context, needed to turn bins into frequencies. */
+  readonly sampleRate: number;
   /** Disconnect and release. Does not close the shared AudioContext. */
   dispose(): void;
 }
 
-/** FFT size. 512 gives 256 bins — plenty of resolution for three bands. */
-const FFT_SIZE = 512;
+/**
+ * FFT size. 2048 gives 1024 bins, about 23Hz apart at the usual sample rate.
+ *
+ * 512 would be cheaper, but its 94Hz bins are too coarse to separate the bass
+ * band from the voice band at all: a male fundamental and the low end of the
+ * speech range would land in the same two or three bins.
+ */
+const FFT_SIZE = 2048;
 
 /**
  * `createMediaElementSource` may only be called once per element per context,
@@ -91,12 +99,24 @@ export function createAudioTap(source: AudioTapSource, holder: AudioContextHolde
     }
     input = node;
   } else {
-    input = source as AudioNode;
+    const node = source as AudioNode;
+    // Web Audio cannot connect nodes across contexts, and the error it throws
+    // says nothing about which contexts are involved. A host building its own
+    // nodes must build them in the engine's context, which it gets from
+    // OrbSceneHandle.getAudioContext().
+    if (node.context !== ctx) {
+      throw new Error(
+        'orb-engine: the AudioNode belongs to a different AudioContext. ' +
+          'Build nodes with the context from OrbSceneHandle.getAudioContext().',
+      );
+    }
+    input = node;
   }
 
   input.connect(analyser);
 
   return {
+    sampleRate: ctx.sampleRate,
     read() {
       analyser.getByteFrequencyData(bins);
       return bins;

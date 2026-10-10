@@ -33,6 +33,11 @@ const CHROME_ARGS = [
   '--hide-scrollbars',
   '--mute-audio',
   '--force-prefers-reduced-motion=0',
+  // A synthetic microphone, auto-granted. Lets the real getUserMedia path be
+  // exercised end to end — permission, stream, analyser tap, orb response —
+  // rather than only the synthetic fallback.
+  '--use-fake-ui-for-media-stream',
+  '--use-fake-device-for-media-stream',
 ];
 
 /**
@@ -53,7 +58,7 @@ const SHOTS = [
   // vertical dashes.
   {
     name: 'portrait',
-    query: 'perf=high&motion=full',
+    query: 'perf=high&motion=full&ui=off',
     state: 'processing',
     settle: 2600,
     viewport: { width: 480, height: 900 },
@@ -62,9 +67,36 @@ const SHOTS = [
   // The same tall window with the aspect correction deliberately disabled.
   // This shot is expected to FAIL roundness: it is how the check above earns
   // its keep. A measure that cannot see this is not measuring anything.
+  // Drives the real microphone path: clicks the mic control, which asks for
+  // permission, attaches the stream and arms the orb. The fake device plays a
+  // tone, so a working tap shows up as a non-zero voice level.
+  {
+    name: 'mic',
+    query: 'perf=high&motion=full&audio=off',
+    click: '#mic-button',
+    settle: 3000,
+    expectState: 'listening',
+    expectLevelAbove: 0.05,
+  },
+  // Drives the real playback path: a synthesised utterance through WebAudio,
+  // tapped without altering what is heard.
+  {
+    name: 'tone',
+    query: 'perf=high&motion=full&audio=off',
+    click: '#tone-button',
+    settle: 3000,
+    expectState: 'speaking',
+    expectLevelAbove: 0.05,
+  },
+  {
+    name: 'landscape-stars',
+    query: 'perf=high&motion=full&ui=off&audio=off',
+    settle: 2000,
+    expectStarAspect: 'round',
+  },
   {
     name: 'aspect-selftest',
-    query: 'perf=high&motion=full',
+    query: 'perf=high&motion=full&ui=off',
     settle: 1200,
     viewport: { width: 480, height: 900 },
     debugBreakAspect: true,
@@ -118,7 +150,10 @@ for (const shot of shots) {
 
   await page.waitForFunction(() => Boolean(window.scene), null, { timeout: 10_000 });
   if (shot.debugBreakAspect) await page.evaluate(() => window.scene.debugForceSquareAspect(true));
-  if (shot.state) await page.evaluate((s) => window.scene.setState(s), shot.state);
+  // Click the real control rather than calling the API: that exercises the
+  // path a user takes, including the chip and readout wiring.
+  if (shot.state) await page.click(`button[data-state="${shot.state}"]`);
+  if (shot.click) await page.click(shot.click);
   await page.waitForTimeout(shot.settle);
 
   const probe = await page.evaluate(() => ({
@@ -144,6 +179,60 @@ for (const shot of shots) {
   if (messages.length > 0) problems += messages.length;
   results.push({ shot: shot.name, gl, probe, stats, motion, starAspect, messages });
   await page.close();
+}
+
+// --- transition check --------------------------------------------------------
+// "Nothing snaps" is a claim about the frames between two states, which a
+// screenshot of either endpoint cannot show.
+//
+// A straight pixel diff cannot answer it either: the sky twinkles and the
+// mesh morphs continuously, and that noise saturates an absolute difference,
+// so an eased transition scores the same as a hard cut. Averaging the whole
+// frame to its mean RGB cancels the twinkle, and projecting the mid-flight
+// colour onto the line from the start colour to the settled one says how far
+// along the journey the scene actually was.
+//
+// The voice is switched off for this check (?audio=off). The envelope
+// follower is deliberately fast-attack, so entering a state that routes audio
+// lights the scene up quickly by design — that is the voice arriving, not the
+// state snapping, and leaving it on measures the two mixed together. What is
+// under test here is the state easing alone.
+const TRANSITION_SAMPLE_MS = 150;
+const transitions = [];
+
+const meanRgbOf = (buffer) => imageStats(decodePng(buffer)).meanRgb;
+const progressAlong = (before, mid, after) => {
+  const d = after.map((v, i) => v - before[i]);
+  const m = mid.map((v, i) => v - before[i]);
+  const denominator = d.reduce((sum, v) => sum + v * v, 0);
+  if (denominator < 1e-9) return 0;
+  return d.reduce((sum, v, i) => sum + v * m[i], 0) / denominator;
+};
+
+if (!only) {
+  for (const [from, to] of [
+    ['idle', 'speaking'],
+    ['idle', 'error'],
+    ['listening', 'processing'],
+  ]) {
+    const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+    await page.goto(`${baseUrl}/?perf=high&motion=full&audio=off`, { waitUntil: 'load' });
+    await page.waitForFunction(() => Boolean(window.scene), null, { timeout: 10_000 });
+
+    await page.click(`button[data-state="${from}"]`);
+    await page.waitForTimeout(2400);
+    const before = meanRgbOf(await page.screenshot({ type: 'png' }));
+
+    await page.click(`button[data-state="${to}"]`);
+    await page.waitForTimeout(TRANSITION_SAMPLE_MS);
+    const mid = meanRgbOf(await page.screenshot({ type: 'png' }));
+
+    await page.waitForTimeout(2400);
+    const after = meanRgbOf(await page.screenshot({ type: 'png' }));
+
+    transitions.push({ from, to, progress: progressAlong(before, mid, after) });
+    await page.close();
+  }
 }
 
 await browser.close();
@@ -183,7 +272,11 @@ for (const r of results) {
 }
 const isStretched = (r) => r.starAspect !== null && Math.abs(r.starAspect - 1) > 0.25;
 for (const r of results) {
-  const expected = SHOTS.find((s) => s.name === r.shot)?.expectStarAspect ?? 'round';
+  // Only shots that declare an expectation are enforced. The rest still
+  // report a number, but their UI chrome makes it advisory: bright glyphs are
+  // elongated blobs and bias the median.
+  const expected = SHOTS.find((s) => s.name === r.shot)?.expectStarAspect;
+  if (!expected) continue;
   if (expected === 'stretched') {
     if (!isStretched(r)) {
       console.error(
@@ -193,7 +286,7 @@ for (const r of results) {
       );
       problems += 1;
     }
-  } else if (isStretched(r)) {
+  } else if (expected === 'round' && isStretched(r)) {
     console.error(`\n✗ ${r.shot}: stars are stretched (${f(r.starAspect, 2)})`);
     problems += 1;
   }
@@ -220,8 +313,55 @@ if (quiet.length > 0) {
   );
   problems += quiet.length;
 }
+// Per-shot expectations: a shot that drives a real audio path has to show
+// that the path actually carried something.
+for (const r of results) {
+  const spec = SHOTS.find((s) => s.name === r.shot);
+  if (spec?.expectState && r.probe.state !== spec.expectState) {
+    console.error(
+      `\n✗ ${r.shot}: expected state ${spec.expectState}, got ${r.probe.state}`,
+    );
+    problems += 1;
+  }
+  if (spec?.expectLevelAbove !== undefined && !(r.probe.audio.level > spec.expectLevelAbove)) {
+    console.error(
+      `\n✗ ${r.shot}: voice level ${f(r.probe.audio.level, 3)} did not exceed ` +
+        `${spec.expectLevelAbove} — the audio tap carried nothing`,
+    );
+    problems += 1;
+  }
+}
+
 for (const r of results) {
   for (const m of r.messages) console.error(`\n✗ ${r.shot}: ${m}`);
+}
+
+if (transitions.length > 0) {
+  console.log(
+    `\ntransition progress ${TRANSITION_SAMPLE_MS}ms after the click ` +
+      '(a hard cut reads ~1.0; the easing predicts roughly 0.3-0.4):',
+  );
+  for (const t of transitions) {
+    console.log(`  ${`${t.from} -> ${t.to}`.padEnd(24)} ${f(t.progress, 3)}`);
+  }
+  // Both bounds matter: too high means it snapped, too low means the click
+  // did nothing and the shot would have passed by accident.
+  const snapped = transitions.filter((t) => t.progress > 0.6);
+  const stalled = transitions.filter((t) => t.progress < 0.04);
+  if (snapped.length > 0) {
+    console.error(
+      `\n✗ ${snapped.length} transition(s) snap rather than ease: ` +
+        snapped.map((t) => `${t.from}->${t.to} (${f(t.progress, 2)})`).join(', '),
+    );
+    problems += snapped.length;
+  }
+  if (stalled.length > 0) {
+    console.error(
+      `\n✗ ${stalled.length} transition(s) never started: ` +
+        stalled.map((t) => `${t.from}->${t.to} (${f(t.progress, 2)})`).join(', '),
+    );
+    problems += stalled.length;
+  }
 }
 
 console.log(`\nwrote ${results.length} shot(s) to shots/`);

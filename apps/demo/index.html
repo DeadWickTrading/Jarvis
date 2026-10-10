@@ -15,7 +15,60 @@
   </head>
   <body>
     <div id="scene"></div>
+
     <h1 class="wordmark">Jarvis<span>.</span></h1>
+
+    <div class="readout">
+      <p class="readout__state" id="state-label">Idle</p>
+      <p class="readout__meta">
+        <span id="tier-label">high</span>
+        <span class="readout__dot">·</span>
+        <span id="fps-label">—</span> fps
+      </p>
+      <div class="meter" title="Voice level">
+        <span class="meter__fill" id="meter"></span>
+      </div>
+    </div>
+
+    <nav class="controls" aria-label="Scene controls">
+      <div class="controls__group">
+        <p class="controls__legend" id="legend-state">State</p>
+        <div class="controls__row" role="group" aria-labelledby="legend-state">
+          <button class="chip" type="button" data-state="idle" aria-pressed="true">Idle</button>
+          <button class="chip" type="button" data-state="arming" aria-pressed="false">Arming</button>
+          <button class="chip" type="button" data-state="listening" aria-pressed="false">
+            Listening
+          </button>
+          <button class="chip" type="button" data-state="processing" aria-pressed="false">
+            Thinking
+          </button>
+          <button class="chip" type="button" data-state="speaking" aria-pressed="false">
+            Speaking
+          </button>
+          <button class="chip" type="button" data-state="error" aria-pressed="false">Error</button>
+        </div>
+      </div>
+
+      <div class="controls__group">
+        <p class="controls__legend" id="legend-voice">Voice</p>
+        <div class="controls__row" role="group" aria-labelledby="legend-voice">
+          <button class="chip" type="button" id="mic-button" aria-pressed="false">Microphone</button>
+          <button class="chip" type="button" id="tone-button" aria-pressed="false">Test tone</button>
+        </div>
+      </div>
+
+      <div class="controls__group">
+        <p class="controls__legend" id="legend-perf">Performance</p>
+        <div class="controls__row" role="group" aria-labelledby="legend-perf">
+          <button class="chip" type="button" data-perf="auto" aria-pressed="true">Auto</button>
+          <button class="chip" type="button" data-perf="high" aria-pressed="false">High</button>
+          <button class="chip" type="button" data-perf="low" aria-pressed="false">Low</button>
+        </div>
+      </div>
+    </nav>
+
+    <p class="hint">Keys <kbd>1</kbd>–<kbd>6</kbd> switch state · <kbd>M</kbd> mic · <kbd>T</kbd> tone</p>
+
     <script type="module" src="./src/main.ts"></script>
   </body>
 </html>
