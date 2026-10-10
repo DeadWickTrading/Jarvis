@@ -27,9 +27,14 @@ version first, then download. `git` already comes with the Xcode Command Line
 Tools.
 
 ```bash
-npm install
+npm ci               # exact versions from the lockfile
 npm run dev          # http://127.0.0.1:5173
 ```
+
+`npm ci` rather than `npm install`: it installs precisely what the lockfile
+says and never rewrites it. `npm install` may tidy the lockfile as a side
+effect, which then shows up as a local modification and makes the next
+`git pull` refuse to merge.
 
 Then click through the states, hold down the microphone, or press the test
 tone. Keys `1`–`6` switch state, `M` toggles the mic, `T` plays the tone.
