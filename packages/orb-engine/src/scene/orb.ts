@@ -3,6 +3,10 @@ import { SIMPLEX_3D } from '../shaders/noise.js';
 import { setSrgb, srgbColor } from './color.js';
 import type { OrbShape, PerformanceTier } from '../types.js';
 import type { FrameContext, ScenePass } from './pass.js';
+import { buildCatGeometry, CAT_DEPTH, CAT_EYES } from './cat.js';
+import { TradeBands } from './trades.js';
+import { BRAND, hexToRgb } from '../brand.js';
+import { clamp01 } from '../easing.js';
 
 /** Icosahedron subdivision per tier. 24 reads as a fine mesh; 10 still reads. */
 const ORB_DETAIL: Record<PerformanceTier, number> = { high: 24, low: 10 };
@@ -60,6 +64,7 @@ uniform float uNoiseTime;
 uniform float uActivity;
 uniform float uBass;
 uniform float uAudioActive;
+uniform float uShapeAmp;
 
 varying float vDisp;
 varying vec3 vNormalView;
@@ -79,7 +84,7 @@ void main() {
   // The whole noise field is scaled by how much is actually going on. This is
   // what keeps the orb calm: in silence uActivity is small, so however busy
   // the noise is, the mesh barely moves.
-  float displacement = noiseSum * uActivity;
+  float displacement = noiseSum * uActivity * uShapeAmp;
 
   // A travelling wave so a bass hit reads as a push through the body rather
   // than as uniform swelling.
@@ -130,6 +135,26 @@ void main() {
   // in the alpha channel would be applied twice. The magnitude belongs in the
   // colour; alpha stays at 1.
   gl_FragColor = vec4(tinted * strength, 1.0);
+}
+`;
+
+/**
+ * A dark, see-through body behind the wireframe, for the solid shapes (wick,
+ * cat). Shares the wireframe's uniforms and vertex shader, so it ripples with it.
+ */
+const FILL_FRAGMENT = /* glsl */ `
+uniform vec3 uColor;
+uniform vec3 uColorSecondary;
+uniform float uTintScale;
+
+varying float vDisp;
+varying vec3 vNormalView;
+varying vec3 vViewDir;
+
+void main() {
+  float tint = clamp(vDisp * uTintScale, 0.0, 1.0);
+  vec3 c = mix(uColor, uColorSecondary, tint);
+  gl_FragColor = vec4(c * 0.42, 0.55);
 }
 `;
 
@@ -212,7 +237,7 @@ export class OrbPass implements ScenePass {
   private readonly ringGroup = new THREE.Group();
 
   private mesh!: THREE.Mesh;
-  private geometry!: THREE.IcosahedronGeometry;
+  private geometry!: THREE.BufferGeometry;
   private readonly material: THREE.ShaderMaterial;
 
   private readonly glowMesh: THREE.Mesh;
@@ -225,13 +250,19 @@ export class OrbPass implements ScenePass {
 
   private tier: PerformanceTier;
   private readonly shape: OrbShape;
+  private fillMesh: THREE.Mesh | null = null;
+  private fillMaterial: THREE.ShaderMaterial | null = null;
+  private readonly pupils = new THREE.Group();
+  private readonly pupilDisposables: { dispose(): void }[] = [];
+  private readonly trades: TradeBands | null;
   private readonly wickGroup = new THREE.Group();
   private readonly wickGeometries: THREE.BufferGeometry[] = [];
   private spin = 0;
 
-  constructor(tier: PerformanceTier, shape: OrbShape = 'orb') {
+  constructor(tier: PerformanceTier, shape: OrbShape = 'orb', trades = false) {
     this.tier = tier;
     this.shape = shape;
+    this.trades = trades ? new TradeBands() : null;
 
     this.camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
     this.camera.position.set(0, 0, 4.2);
@@ -245,6 +276,8 @@ export class OrbPass implements ScenePass {
         uActivity: { value: 0 },
         uBass: { value: 0 },
         uAudioActive: { value: 0 },
+        // The cat keeps its ears: its outline ripples at half the orb's depth.
+        uShapeAmp: { value: shape === 'cat' ? 0.5 : 1 },
         uColor: { value: srgbColor([1, 1, 1]) },
         uColorSecondary: { value: srgbColor([1, 1, 1]) },
         uOpacity: { value: 0.4 },
@@ -252,7 +285,7 @@ export class OrbPass implements ScenePass {
         uGlow: { value: 0.35 },
         uTintScale: { value: 3 },
         // How visible the face pointing at us is. The candle reads as a solid body.
-        uFloor: { value: shape === 'wick' ? 0.3 : 0.08 },
+        uFloor: { value: shape === 'orb' ? 0.08 : 0.3 },
       },
       wireframe: true,
       transparent: true,
@@ -260,7 +293,43 @@ export class OrbPass implements ScenePass {
       blending: THREE.AdditiveBlending,
     });
 
+    if (shape !== 'orb') {
+      this.fillMaterial = new THREE.ShaderMaterial({
+        vertexShader: ORB_VERTEX,
+        fragmentShader: FILL_FRAGMENT,
+        uniforms: this.material.uniforms,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+    }
+
     this.buildMesh();
+
+    if (shape === 'cat') {
+      // Candle pupils, lime left and violet right, as in the logo. They blink.
+      const pupil = new THREE.IcosahedronGeometry(1, 3);
+      toWickBody(pupil);
+      pupil.scale(0.13, 0.13, 0.13);
+      const wickLine = new THREE.CylinderGeometry(0.009, 0.009, 0.36, 6, 1, true);
+      this.pupilDisposables.push(pupil, wickLine);
+      [BRAND.accent, BRAND.secondary].forEach((hex, i) => {
+        const material = new THREE.MeshBasicMaterial({
+          color: srgbColor(hexToRgb(hex)),
+          transparent: true,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+        this.pupilDisposables.push(material);
+        const eye = CAT_EYES[i]!;
+        for (const geometry of [pupil, wickLine]) {
+          const mesh = new THREE.Mesh(geometry, material);
+          mesh.position.set(eye.x, eye.y, CAT_DEPTH * 0.3);
+          this.pupils.add(mesh);
+        }
+      });
+      this.group.add(this.pupils);
+    }
 
     if (shape === 'wick') {
       // The wicks share the orb's shader, so they ripple and rim-light with it.
@@ -296,6 +365,7 @@ export class OrbPass implements ScenePass {
     this.glowMesh = new THREE.Mesh(this.glowGeometry, this.glowMaterial);
     // Stretch the halo to the candle's height so it still hugs the edge.
     if (shape === 'wick') this.glowMesh.scale.set(0.62, 1.15, 0.62);
+    if (shape === 'cat') this.glowMesh.scale.setScalar(0.95);
     this.group.add(this.glowMesh);
 
     for (const ring of RINGS) {
@@ -318,11 +388,22 @@ export class OrbPass implements ScenePass {
 
     this.group.add(this.ringGroup);
     this.scene.add(this.group);
+    if (this.trades) this.scene.add(this.trades.group);
   }
 
   private buildMesh(): void {
-    this.geometry = new THREE.IcosahedronGeometry(1, ORB_DETAIL[this.tier]);
-    if (this.shape === 'wick') toWickBody(this.geometry);
+    if (this.shape === 'cat') {
+      this.geometry = buildCatGeometry(this.tier === 'high' ? 0.05 : 0.085);
+    } else {
+      this.geometry = new THREE.IcosahedronGeometry(1, ORB_DETAIL[this.tier]);
+      if (this.shape === 'wick') toWickBody(this.geometry);
+    }
+    if (this.fillMaterial) {
+      if (this.fillMesh) this.group.remove(this.fillMesh);
+      this.fillMesh = new THREE.Mesh(this.geometry, this.fillMaterial);
+      this.fillMesh.renderOrder = -1;
+      this.group.add(this.fillMesh);
+    }
     this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.group.add(this.mesh);
   }
@@ -348,7 +429,7 @@ export class OrbPass implements ScenePass {
     // it stays a halo rather than washing the screen.
     g.uStrength!.value = params.glow * (0.10 + audio.level * 0.16 + audio.bass * 0.07);
     // The stretched halo covers more screen around the candle, so it runs softer.
-    if (this.shape === 'wick') g.uStrength!.value *= 0.55;
+    if (this.shape !== 'orb') g.uStrength!.value *= 0.55;
     // A sharper orb edge gets a tighter halo, so the two read as one object.
     g.uBandWidth!.value = 0.42 / Math.max(1.2, params.fresnelPower * 0.55);
 
@@ -362,9 +443,21 @@ export class OrbPass implements ScenePass {
 
     this.spin += params.rotationSpeed * ctx.dt;
     this.group.rotation.y = this.spin;
+    this.trades?.update(ctx.dt, clamp01(audio.level * params.networkGain));
 
     const scale = 1 + audio.level * 0.07 + audio.bass * 0.04;
-    if (this.shape === 'wick') {
+    if (this.shape === 'cat') {
+      // A face looks at you: it sways and turns its head, it never spins round.
+      this.group.rotation.y = Math.sin(this.spin * 1.3) * 0.38;
+      this.group.rotation.x = Math.sin(ctx.animTime * 0.13) * 0.08;
+      this.group.rotation.z = Math.sin(ctx.animTime * 0.19) * 0.03;
+      this.group.scale.setScalar(scale);
+      // A blink every few seconds: the candle pupils squeeze shut and reopen.
+      const cycle = ctx.animTime % 5.3;
+      const blink = cycle < 0.16 ? Math.abs(Math.cos((cycle / 0.16) * Math.PI)) : 1;
+      const open = Math.max(0.08, blink) * (1 + audio.level * 0.25);
+      for (const pupil of this.pupils.children) pupil.scale.set(1, open, 1);
+    } else if (this.shape === 'wick') {
       // A candle stays upright: only a slight sway. The body grows with the
       // voice the way a candle prints while price moves.
       this.group.rotation.x = Math.sin(ctx.animTime * 0.11) * 0.06;
@@ -400,6 +493,9 @@ export class OrbPass implements ScenePass {
     this.glowGeometry.dispose();
     this.glowMaterial.dispose();
     for (const geometry of this.wickGeometries) geometry.dispose();
+    for (const d of this.pupilDisposables) d.dispose();
+    this.fillMaterial?.dispose();
+    this.trades?.dispose();
     for (const geometry of this.ringGeometries) geometry.dispose();
     for (const material of this.ringMaterials) material.dispose();
     this.scene.clear();

@@ -83,7 +83,7 @@ export type AudioTapSource = MediaStream | AudioNode | HTMLMediaElement;
 
 /** Options for {@link createOrbScene}. */
 /** Silhouette of the central subject. */
-export type OrbShape = 'orb' | 'wick';
+export type OrbShape = 'orb' | 'wick' | 'cat';
 
 export interface OrbSceneOptions {
   /** Starting state. Defaults to `idle`. */
@@ -99,9 +99,9 @@ export interface OrbSceneOptions {
    */
   readonly shape?: OrbShape;
   /**
-   * Paint the star network as big trades: every node becomes a buy (lime) or
-   * sell (red) print, sized like an order-flow bubble - mostly small, a few
-   * large. Defaults to false.
+   * Big trades orbiting the subject: lime buy / red sell cubes in three tilted
+   * bands, joined into constellations, sized like order-flow prints (mostly
+   * small, a few blocks). Defaults to false.
    */
   readonly trades?: boolean;
   /**
