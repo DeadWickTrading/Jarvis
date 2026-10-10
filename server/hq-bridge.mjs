@@ -181,6 +181,9 @@ export function createHqBridge({ hqDir = process.env.HQ_DIR || DEFAULT_HQ_DIR, s
 /** Vite plugin wrapper, used by apps/demo/vite.config.ts. */
 export function hqBridgePlugin(options = {}) {
   const handler = createHqBridge(options);
-  const install = (server) => server.middlewares.use(handler);
+  // Braces matter: if configureServer returns a function, Vite calls it later as a post-hook.
+  const install = (server) => {
+    server.middlewares.use(handler);
+  };
   return { name: 'jarwick-hq-bridge', configureServer: install, configurePreviewServer: install };
 }
