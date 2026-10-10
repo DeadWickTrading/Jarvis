@@ -479,7 +479,6 @@ if (!only || checksOnly) {
 // then watch the orb follow the agent's own events through thinking and
 // speaking and back to listening. Press Talk again and the microphone must
 // genuinely close while the socket stays open.
-const AGENT_STUB_URL = 'ws://127.0.0.1:8788';
 let agentCheck = null;
 
 const stubAgentReachable = await fetch('http://127.0.0.1:8788', { method: 'GET' })
@@ -496,10 +495,9 @@ if ((!only || checksOnly) && !stubAgentReachable) {
   });
   page.on('pageerror', (e) => noise.push(`pageerror: ${e.message}`));
 
-  await page.goto(
-    `${baseUrl}/?perf=low&motion=full&audio=off&agent=${encodeURIComponent(AGENT_STUB_URL)}`,
-    { waitUntil: 'load' },
-  );
+  // No ?agent= override: this goes through the same-origin relay, which is
+  // the default path and the one that needs no credential in the browser.
+  await page.goto(`${baseUrl}/?perf=low&motion=full&audio=off`, { waitUntil: 'load' });
   await page.waitForFunction(() => Boolean(window.agent), null, { timeout: 10_000 });
 
   await page.click('#talk-button');

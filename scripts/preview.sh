@@ -69,6 +69,7 @@ case "$ACTION" in
       echo $! > "$AGENT_PIDFILE"
       export DEEPGRAM_API_KEY="stub-key-not-a-real-credential"
       export DEEPGRAM_BASE_URL="http://127.0.0.1:${STUB_PORT}"
+      export DEEPGRAM_AGENT_URL="ws://127.0.0.1:${AGENT_PORT}"
       echo "stub Deepgram speech on :${STUB_PORT}, agent on :${AGENT_PORT}"
     fi
 

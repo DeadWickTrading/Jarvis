@@ -20,6 +20,8 @@
  * the server exchanges it for a token that expires in seconds.
  */
 
+import { createAgentRelay } from './agent-relay.mjs';
+
 /** Deepgram answers 413 above 2000 characters and returns no audio at all. */
 const MAX_TEXT_CHARS = 2000;
 /** Generous for speech, small enough that nobody can post a film script. */
@@ -322,16 +324,29 @@ export function createTtsProxy({ env = process.env, fetchImpl = globalThis.fetch
 /** Readable alias: the proxy covers speech synthesis and agent tokens. */
 export { createTtsProxy as createSpeechProxy };
 
-/** Vite plugin: the same handler in `vite dev` and `vite preview`. */
+/**
+ * Vite plugin: the same handler in `vite dev` and `vite preview`, plus the
+ * Voice Agent socket relay on the same port.
+ */
 export function ttsProxyPlugin(options = {}) {
   const handler = createTtsProxy(options);
+  const relay = createAgentRelay({ env: options.env ?? process.env });
+
+  const install = (server) => {
+    server.middlewares.use(handler);
+    // The dev server runs its own hot-reload socket on this port, so the
+    // relay claims only its own path and leaves every other upgrade alone.
+    server.httpServer?.on('upgrade', (request, socket, head) => {
+      relay.handleUpgrade(request, socket, head);
+    });
+  };
+
   return {
-    name: 'jarvis-tts-proxy',
-    configureServer(server) {
-      server.middlewares.use(handler);
-    },
-    configurePreviewServer(server) {
-      server.middlewares.use(handler);
+    name: 'jarvis-speech-proxy',
+    configureServer: install,
+    configurePreviewServer: install,
+    closeBundle() {
+      relay.close();
     },
   };
 }

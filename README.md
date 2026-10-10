@@ -14,7 +14,8 @@ packages/orb-engine    the engine: framework-free TypeScript, three.js, no backe
 packages/voice         speech: browser synthesis, Deepgram Aura, an ElevenLabs
                        slot, and the Voice Agent conversation loop
 apps/demo              a Vite page that embeds both, with a control for every state
-server/                the speech proxy, so API keys never reach the browser
+server/                the speech proxy and the agent socket relay, so API
+                       keys never reach the browser
 scripts/               token generation, the screenshot harness, a PNG reader
 ```
 
@@ -193,16 +194,31 @@ Two details worth knowing:
 
 A browser cannot set an Authorization header on a WebSocket handshake, so the
 key cannot travel the usual way — and sending the long-lived key at all would
-publish it. The proxy exchanges it for a token that expires in thirty seconds
-(`POST /api/agent/token`), and the browser uses that.
+publish it.
 
-How the token should then be attached is genuinely ambiguous: Deepgram
-documents `Sec-WebSocket-Protocol: token, <credential>`, while community
-reports say a JWT needs `?access_token=` in the query string instead. A
-rejected handshake in a browser gives back nothing but close code 1006, so
-guessing wrong is an afternoon of silence with no error to read. The client
-therefore tries each form in turn and reports which one the server accepted.
-Pin it with the `strategies` option once you know.
+**The default is to relay.** The browser opens a plain same-origin socket to
+`/api/agent/socket` with no credential whatsoever; the server opens the
+upstream one with the key in a header, where headers are allowed, and copies
+frames between them. The key never leaves the machine it is stored on, not
+even as something short-lived.
+
+That is not only tidier, it avoids a wall. The obvious alternative — minting
+a short-lived token with `POST /v1/auth/grant` — needs a key with **Member
+permissions or higher**, while the very same key works fine for synthesis. A
+key that demonstrably speaks can still be refused a token, and the
+conversation dies for a reason that has nothing to do with the code. The
+relay needs no permission level at all.
+
+It also sidesteps a genuine ambiguity. Deepgram documents
+`Sec-WebSocket-Protocol: token, <credential>`; community reports say a JWT
+needs `?access_token=` in the query string instead. A rejected handshake in a
+browser gives back nothing but close code 1006, so guessing wrong is an
+afternoon of silence with no error to read.
+
+Both token forms remain as fallbacks for a deployment that cannot relay. The
+client tries the relay, then each token form, mints a token only if one is
+actually needed, and reports which route the server accepted. Pin it with the
+`strategies` option once you know.
 
 ### Testing the agent without an account
 

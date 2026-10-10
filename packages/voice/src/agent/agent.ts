@@ -216,7 +216,11 @@ export function createVoiceAgent(options: VoiceAgentOptions): VoiceAgent {
     });
 
     connection = opened;
-    options.onInfo?.(`Connected using the ${opened.strategy} credential form.`);
+    options.onInfo?.(
+      opened.strategy === 'relay'
+        ? 'Connected through the server relay — no credential in the browser.'
+        : `Connected directly using the ${opened.strategy} credential form.`,
+    );
     update({ connection: 'open' });
     return opened;
   }

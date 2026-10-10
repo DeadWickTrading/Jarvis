@@ -70,11 +70,22 @@ wss.on('connection', (socket, request) => {
   const url = new URL(request.url ?? '/', `http://127.0.0.1:${PORT}`);
   const viaQuery = url.searchParams.has('access_token');
   const viaProtocol = Boolean(socket.protocol);
+  // A relayed connection arrives with a header, exactly as a non-browser
+  // client would — that is the whole point of relaying.
+  const viaHeader = (request.headers.authorization ?? '').startsWith('Token ');
   console.log(
-    `agent connection: ${viaQuery ? 'query token' : viaProtocol ? `subprotocol "${socket.protocol}"` : 'no credential'}`,
+    `agent connection: ${
+      viaHeader
+        ? 'Authorization header (relayed)'
+        : viaQuery
+          ? 'query token'
+          : viaProtocol
+            ? `subprotocol "${socket.protocol}"`
+            : 'no credential'
+    }`,
   );
 
-  if (!viaQuery && !viaProtocol) {
+  if (!viaQuery && !viaProtocol && !viaHeader) {
     socket.close(1008, 'no credential');
     return;
   }

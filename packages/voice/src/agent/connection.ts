@@ -10,12 +10,26 @@
  * wrong is otherwise an afternoon of silence with no error to read.
  */
 
-export type AgentAuthStrategy = 'query' | 'token-subprotocol' | 'bearer-subprotocol';
+export type AgentAuthStrategy =
+  | 'relay'
+  | 'query'
+  | 'token-subprotocol'
+  | 'bearer-subprotocol';
 
 export const DEFAULT_AGENT_URL = 'wss://agent.deepgram.com/v1/agent/converse';
+export const DEFAULT_RELAY_PATH = '/api/agent/socket';
 
-/** The order to try. Query first: that is what a JWT is reported to need. */
+/**
+ * The order to try.
+ *
+ * The relay comes first because it needs no credential in the browser at all
+ * — the server holds the key and copies frames — which sidesteps both the
+ * token endpoint's permission requirement and the disagreement about how a
+ * token should be attached. The direct forms remain as fallbacks for a
+ * deployment that cannot relay.
+ */
 export const DEFAULT_AUTH_STRATEGIES: readonly AgentAuthStrategy[] = [
+  'relay',
   'query',
   'token-subprotocol',
   'bearer-subprotocol',
@@ -25,6 +39,8 @@ export interface AgentConnectionOptions {
   readonly url?: string;
   /** Route on our own server that mints a short-lived token. */
   readonly tokenEndpoint?: string;
+  /** Same-origin path the server relays to Deepgram from. */
+  readonly relayPath?: string;
   /** The Settings message, sent the moment the socket opens. */
   readonly settings: unknown;
   readonly strategies?: readonly AgentAuthStrategy[];
@@ -67,6 +83,13 @@ async function mintToken(endpoint: string): Promise<string> {
   return body.access_token;
 }
 
+/** Where the same-origin relay lives, as an absolute ws:// or wss:// URL. */
+function relayUrlFor(path: string): string {
+  const base = new URL(path, window.location.href);
+  base.protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
+  return base.toString();
+}
+
 /** Build the URL and subprotocols for one strategy. */
 function buildHandshake(
   baseUrl: string,
@@ -74,6 +97,9 @@ function buildHandshake(
   strategy: AgentAuthStrategy,
 ): { url: string; protocols?: string[] } {
   switch (strategy) {
+    case 'relay':
+      // No credential: the server attaches it upstream.
+      return { url: baseUrl };
     case 'query': {
       const url = new URL(baseUrl);
       url.searchParams.set('access_token', token);
@@ -138,15 +164,23 @@ export async function connectAgent(options: AgentConnectionOptions): Promise<Age
   const handshakeTimeoutMs = options.handshakeTimeoutMs ?? 6000;
   const keepAliveMs = options.keepAliveMs ?? 5000;
 
-  const token = await mintToken(options.tokenEndpoint ?? '/api/agent/token');
+  const relayUrl = relayUrlFor(options.relayPath ?? DEFAULT_RELAY_PATH);
 
   let socket: WebSocket | null = null;
   let strategy: AgentAuthStrategy = strategies[0]!;
   const failures: string[] = [];
+  // Minted only if a strategy actually needs one. The relay does not, so a
+  // key without permission to mint tokens never hits that wall.
+  let token: string | null = null;
 
   for (const candidate of strategies) {
     try {
-      socket = await attempt(baseUrl, token, candidate, handshakeTimeoutMs);
+      if (candidate === 'relay') {
+        socket = await attempt(relayUrl, '', candidate, handshakeTimeoutMs);
+      } else {
+        token ??= await mintToken(options.tokenEndpoint ?? '/api/agent/token');
+        socket = await attempt(baseUrl, token, candidate, handshakeTimeoutMs);
+      }
       strategy = candidate;
       break;
     } catch (error) {
