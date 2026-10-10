@@ -13,7 +13,10 @@
       "import": "./dist/orb-engine.js"
     }
   },
-  "files": ["dist", "src"],
+  "files": [
+    "dist",
+    "src"
+  ],
   "sideEffects": false,
   "scripts": {
     "build": "vite build && tsc -p tsconfig.build.json",
@@ -27,6 +30,6 @@
     "@types/three": "0.186.0",
     "typescript": "5.9.3",
     "vite": "7.3.7",
-    "vitest": "3.2.7"
+    "vitest": "5.0.3"
   }
 }
