@@ -99,6 +99,12 @@ export interface OrbSceneOptions {
    */
   readonly shape?: OrbShape;
   /**
+   * Paint the star network as big trades: every node becomes a buy (lime) or
+   * sell (red) print, sized like an order-flow bubble - mostly small, a few
+   * large. Defaults to false.
+   */
+  readonly trades?: boolean;
+  /**
    * Honour the OS reduce-motion setting. Defaults to true. When reduced motion
    * is active the engine slows its own animation clock rather than scaling
    * elapsed time, so phases stay continuous across the change.

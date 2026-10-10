@@ -18,6 +18,14 @@ const TIER_DENSITY: Record<PerformanceTier, number> = { high: 1, low: 0.55 };
  */
 const NODE_FALLOFF = Math.log(0.5) / Math.log(0.7);
 
+/** A stable 0..1 hash of an integer, for per-node trade side and size. */
+function tradeHash(n: number): number {
+  let h = Math.imul(n ^ 0x9e3779b9, 0x85ebca6b);
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
+  h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+
 /** Line opacity at rest and at full voice. */
 const LINK_OPACITY = { quiet: 0.12, loud: 0.65 } as const;
 
@@ -91,8 +99,11 @@ export class NetworkPass implements ScenePass {
   private spin = 0;
   private height = 1;
 
-  constructor(tier: PerformanceTier, seed?: number) {
+  private readonly trades: boolean;
+
+  constructor(tier: PerformanceTier, seed?: number, trades = false) {
     this.tier = tier;
+    this.trades = trades;
     this.full = buildGalaxy(seed === undefined ? {} : { seed });
 
     this.camera = new THREE.PerspectiveCamera(60, 1, 0.1, 400);
@@ -138,8 +149,28 @@ export class NetworkPass implements ScenePass {
     const colors = new Float32Array(count * 3);
     const sizes = new Float32Array(count);
     const colour = new THREE.Color();
+    const buy = hexToRgb(BRAND.accent);
+    const sell = hexToRgb(BRAND.error);
+    const side: boolean[] = [];
 
     galaxy.nodes.forEach((node, i) => {
+      if (this.trades) {
+        // Deterministic per node, so the same galaxy prints the same tape.
+        const r1 = tradeHash(i * 2 + 1);
+        const r2 = tradeHash(i * 2 + 2);
+        const isBuy = r1 < 0.5;
+        side[i] = isBuy;
+        positions[i * 3] = node.position[0];
+        positions[i * 3 + 1] = node.position[1];
+        positions[i * 3 + 2] = node.position[2];
+        srgbColor(isBuy ? buy : sell).getRGB(colour);
+        colors[i * 3] = colour.r;
+        colors[i * 3 + 1] = colour.g;
+        colors[i * 3 + 2] = colour.b;
+        // Heavy tail: most prints small, a handful of block trades.
+        sizes[i] = node.size * (1.1 + 7 * r2 ** 4);
+        return;
+      }
       positions[i * 3] = node.position[0];
       positions[i * 3 + 1] = node.position[1];
       positions[i * 3 + 2] = node.position[2];
@@ -165,7 +196,9 @@ export class NetworkPass implements ScenePass {
       const b = galaxy.nodes[link.b]!.position;
       linkPositions.set(a, i * 6);
       linkPositions.set(b, i * 6 + 3);
-      const lineColour = srgbColor(link.color);
+      const lineColour = this.trades
+        ? srgbColor(side[link.a] === side[link.b] ? (side[link.a] ? buy : sell) : hexToRgb(BRAND.dim))
+        : srgbColor(link.color);
       linkColors.set([lineColour.r, lineColour.g, lineColour.b], i * 6);
       linkColors.set([lineColour.r, lineColour.g, lineColour.b], i * 6 + 3);
     });
