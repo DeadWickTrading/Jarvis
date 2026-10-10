@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { defineConfig, loadEnv } from 'vite';
-import { ttsProxyPlugin } from '../../server/tts-proxy.mjs';
+import { ttsProxyPlugin } from '../../server/speech-proxy.mjs';
 
 /**
  * The demo resolves the engine and the voice package to their TypeScript

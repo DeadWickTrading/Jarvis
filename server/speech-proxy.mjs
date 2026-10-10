@@ -12,6 +12,12 @@
  *   GET  /api/tts/health       which providers hold credentials
  *   POST /api/tts/deepgram     { text, model? }      -> audio bytes
  *   POST /api/tts/elevenlabs   { text, voiceId? }    -> audio bytes
+ *   POST /api/agent/token      -> a short-lived Deepgram token for the browser
+ *
+ * The last one exists because a browser cannot set an Authorization header on
+ * a WebSocket handshake, so the Voice Agent socket has to carry a credential
+ * some other way. Sending the long-lived API key would publish it; instead
+ * the server exchanges it for a token that expires in seconds.
  */
 
 /** Deepgram answers 413 above 2000 characters and returns no audio at all. */
@@ -40,6 +46,11 @@ function readConfig(env) {
       // specific container.
       encoding: env.DEEPGRAM_TTS_ENCODING || '',
       container: env.DEEPGRAM_TTS_CONTAINER || '',
+    },
+    agent: {
+      // Deliberately short. The browser asks for one per connection, so a
+      // leaked token is worth almost nothing by the time anyone sees it.
+      ttlSeconds: Number(env.DEEPGRAM_TOKEN_TTL_SECONDS || 30),
     },
     elevenlabs: {
       key: env.ELEVENLABS_API_KEY ?? '',
@@ -143,12 +154,18 @@ async function relayAudio(res, upstream, providerLabel) {
   res.end(audio);
 }
 
+/** The grant call uses the same injected fetch as everything else. */
+function fetchImplFor(config) {
+  return config.__fetch;
+}
+
 export function createTtsProxy({ env = process.env, fetchImpl = globalThis.fetch } = {}) {
   const config = readConfig(env);
+  config.__fetch = fetchImpl;
 
   return async function handleTts(req, res, next) {
     const url = new URL(req.url ?? '/', 'http://localhost');
-    if (!url.pathname.startsWith('/api/tts')) {
+    if (!url.pathname.startsWith('/api/tts') && !url.pathname.startsWith('/api/agent')) {
       if (next) return next();
       sendJson(res, 404, { error: 'Not found' });
       return;
@@ -161,6 +178,12 @@ export function createTtsProxy({ env = process.env, fetchImpl = globalThis.fetch
             deepgram: config.deepgram.key
               ? { configured: true, detail: `Deepgram Aura — ${config.deepgram.model}` }
               : { configured: false, reason: 'DEEPGRAM_API_KEY is not set on the server.' },
+            agent: config.deepgram.key
+              ? { configured: true, detail: 'Voice Agent tokens available' }
+              : {
+                  configured: false,
+                  reason: 'DEEPGRAM_API_KEY is not set on the server.',
+                },
             elevenlabs: config.elevenlabs.key
               ? {
                   configured: Boolean(config.elevenlabs.voiceId),
@@ -177,6 +200,49 @@ export function createTtsProxy({ env = process.env, fetchImpl = globalThis.fetch
 
       if (req.method !== 'POST') {
         sendJson(res, 405, { error: 'Use POST' });
+        return;
+      }
+
+      if (url.pathname === '/api/agent/token') {
+        if (!config.deepgram.key) {
+          sendJson(res, 503, { error: 'DEEPGRAM_API_KEY is not set on the server.' });
+          return;
+        }
+        const grant = await fetchImplFor(config).call(
+          null,
+          new URL('/v1/auth/grant', config.deepgram.baseUrl),
+          {
+            method: 'POST',
+            headers: {
+              authorization: `Token ${config.deepgram.key}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ ttl_seconds: config.agent.ttlSeconds }),
+          },
+        );
+
+        if (!grant.ok) {
+          const detail = await grant.text().catch(() => '');
+          sendJson(res, grant.status === 401 || grant.status === 403 ? 502 : grant.status, {
+            error:
+              grant.status === 401 || grant.status === 403
+                ? 'Deepgram rejected the API key when minting an agent token.'
+                : `Deepgram returned ${grant.status} when minting an agent token.`,
+            detail: detail.slice(0, 400),
+          });
+          return;
+        }
+
+        const body = JSON.parse(await grant.text());
+        if (!body?.access_token) {
+          sendJson(res, 502, { error: 'Deepgram returned no access token.' });
+          return;
+        }
+        // Only the token and its lifetime go out. Never the API key.
+        sendJson(res, 200, {
+          access_token: body.access_token,
+          expires_in: body.expires_in ?? config.agent.ttlSeconds,
+        });
         return;
       }
 
@@ -244,6 +310,9 @@ export function createTtsProxy({ env = process.env, fetchImpl = globalThis.fetch
     }
   };
 }
+
+/** Readable alias: the proxy covers speech synthesis and agent tokens. */
+export { createTtsProxy as createSpeechProxy };
 
 /** Vite plugin: the same handler in `vite dev` and `vite preview`. */
 export function ttsProxyPlugin(options = {}) {

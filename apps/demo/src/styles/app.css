@@ -321,6 +321,48 @@ body {
   }
 }
 
+/* --- transcript ---------------------------------------------------------- */
+
+.transcript {
+  margin: 0;
+  max-width: min(44rem, 100%);
+  font-family: var(--dw-font-body);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  text-align: center;
+  color: var(--dw-text-muted);
+  pointer-events: none;
+}
+
+.transcript:not(:empty) {
+  padding: 0.45rem 0.9rem;
+  border-radius: 12px;
+  background: rgb(var(--dw-panel-rgb) / 0.74);
+  backdrop-filter: blur(14px);
+}
+
+.transcript b {
+  font-weight: 600;
+  color: var(--dw-text-dim);
+  font-family: var(--dw-font-mono);
+  font-size: 0.62rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-right: 0.5rem;
+}
+
+.transcript[data-role='assistant'] {
+  color: var(--dw-text-strong);
+}
+
+.scene-only .transcript {
+  display: none;
+}
+
+#talk-button[aria-pressed='true'] {
+  --chip: var(--dw-state-listening);
+}
+
 /* --- hint ---------------------------------------------------------------- */
 
 .hint {

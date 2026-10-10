@@ -34,6 +34,9 @@ export type TtsProxyHandler = (req: unknown, res: unknown, next?: () => void) =>
 
 export function createTtsProxy(options?: TtsProxyOptions): TtsProxyHandler;
 
+/** Readable alias: the proxy covers speech synthesis and agent tokens. */
+export { createTtsProxy as createSpeechProxy };
+
 export interface TtsProxyPlugin {
   readonly name: string;
   configureServer(server: { middlewares: { use(handler: TtsProxyHandler): void } }): void;

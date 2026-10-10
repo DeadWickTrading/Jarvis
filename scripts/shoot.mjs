@@ -182,11 +182,15 @@ for (const shot of shots) {
   // make a claim about audio watch for a peak over a window instead.
   let peakLevel = 0;
   if (shot.expectLevelAbove !== undefined) {
-    for (let i = 0; i < 24; i += 1) {
+    // Long enough to cover a quiet patch. Chromium's fake capture device
+    // emits a tone in bursts with seconds of silence between them, so a short
+    // window can legitimately see nothing at all. The loop exits the moment
+    // the level clears the bar, so a working tap costs nothing.
+    for (let i = 0; i < 60; i += 1) {
       const level = await page.evaluate(() => window.scene.getAudioLevels().level);
       peakLevel = Math.max(peakLevel, level);
       if (peakLevel > shot.expectLevelAbove) break;
-      await page.waitForTimeout(120);
+      await page.waitForTimeout(150);
     }
   }
 
@@ -469,6 +473,75 @@ if (!only || checksOnly) {
   await page.close();
 }
 
+// --- voice agent --------------------------------------------------------------
+// Drives the full conversation loop against the stub agent: press Talk, which
+// mints a token, opens the socket, sends Settings and starts the microphone;
+// then watch the orb follow the agent's own events through thinking and
+// speaking and back to listening. Press Talk again and the microphone must
+// genuinely close while the socket stays open.
+const AGENT_STUB_URL = 'ws://127.0.0.1:8788';
+let agentCheck = null;
+
+const stubAgentReachable = await fetch('http://127.0.0.1:8788', { method: 'GET' })
+  .then(() => true)
+  .catch(() => false);
+
+if ((!only || checksOnly) && !stubAgentReachable) {
+  agentCheck = { skipped: 'stub agent not running — use ./scripts/preview.sh --stubs' };
+} else if (!only || checksOnly) {
+  const page = await browser.newPage({ viewport: VIEWPORT, deviceScaleFactor: 1 });
+  const noise = [];
+  page.on('console', (m) => {
+    if (m.type() === 'error') noise.push(`${m.type()}: ${m.text()}`);
+  });
+  page.on('pageerror', (e) => noise.push(`pageerror: ${e.message}`));
+
+  await page.goto(
+    `${baseUrl}/?perf=low&motion=full&audio=off&agent=${encodeURIComponent(AGENT_STUB_URL)}`,
+    { waitUntil: 'load' },
+  );
+  await page.waitForFunction(() => Boolean(window.agent), null, { timeout: 10_000 });
+
+  await page.click('#talk-button');
+
+  const seen = new Set();
+  let peakLevel = 0;
+  let transcript = '';
+  let shot = null;
+
+  for (let i = 0; i < 44; i += 1) {
+    const probe = await page.evaluate(() => ({
+      state: window.scene.getState(),
+      level: window.scene.getAudioLevels().level,
+      status: window.agent.status,
+      transcript: document.querySelector('#transcript')?.textContent ?? '',
+    }));
+    seen.add(probe.state);
+    peakLevel = Math.max(peakLevel, probe.level);
+    if (probe.transcript) transcript = probe.transcript;
+    if (!shot && probe.state === 'speaking' && probe.level > 0.1) {
+      shot = await page.screenshot({ type: 'png' });
+    }
+    // Stop once the turn has completed and the mic is holding the line.
+    if (seen.has('speaking') && probe.state === 'listening') break;
+    await page.waitForTimeout(250);
+  }
+
+  if (shot) writeFileSync(join(OUT_DIR, 'agent-speaking.png'), shot);
+
+  // The latch: switching off must stop the microphone without closing the
+  // socket, so the next exchange resumes instantly with its context intact.
+  await page.click('#talk-button');
+  await page.waitForTimeout(700);
+  const afterLatchOff = await page.evaluate(() => ({
+    micOpen: window.agent.status.micOpen,
+    connection: window.agent.status.connection,
+  }));
+
+  agentCheck = { states: [...seen], peakLevel, transcript, afterLatchOff, noise };
+  await page.close();
+}
+
 // --- live region -------------------------------------------------------------
 // A screen reader needs to be told whether this thing is listening or
 // thinking. Check the region exists, is polite, and actually tracks the state.
@@ -522,7 +595,7 @@ for (const r of results) {
       f(r.stats.meanRgb[0]).padEnd(8),
       f(r.stats.meanRgb[1]).padEnd(8),
       f(r.stats.meanRgb[2]).padEnd(8),
-      f(r.probe.peakLevel, 2).padEnd(8),
+      f(r.probe.peakLevel, 3).padEnd(8),
       f(r.motion, 4),
     ].join(''),
   );
@@ -763,6 +836,57 @@ if (speech) {
     }
     for (const n of speech.noise) {
       console.error(`\n✗ speech: ${n}`);
+      problems += 1;
+    }
+  }
+}
+
+if (agentCheck) {
+  if (agentCheck.skipped) {
+    console.log(`\nvoice agent: skipped — ${agentCheck.skipped}`);
+  } else {
+    console.log('\nvoice agent (full conversation loop against the stub):');
+    console.log(`  states ${agentCheck.states.join(' -> ')}`);
+    console.log(
+      `  peak voice level ${f(agentCheck.peakLevel, 3)}  ` +
+        `transcript ${JSON.stringify(agentCheck.transcript.slice(0, 48))}`,
+    );
+    console.log(
+      `  after latch off: mic ${agentCheck.afterLatchOff.micOpen}, ` +
+        `socket ${agentCheck.afterLatchOff.connection}`,
+    );
+
+    for (const required of ['arming', 'speaking', 'listening']) {
+      if (!agentCheck.states.includes(required)) {
+        console.error(
+          `\n✗ voice agent: the orb never entered '${required}' (saw ${agentCheck.states.join(', ')})`,
+        );
+        problems += 1;
+      }
+    }
+    if (!(agentCheck.peakLevel > 0.05)) {
+      console.error(
+        `\n✗ voice agent: voice level peaked at ${f(agentCheck.peakLevel, 3)} — the orb is not riding the agent`,
+      );
+      problems += 1;
+    }
+    if (!agentCheck.transcript) {
+      console.error('\n✗ voice agent: no transcript arrived');
+      problems += 1;
+    }
+    if (agentCheck.afterLatchOff.micOpen) {
+      console.error('\n✗ voice agent: the microphone stayed open after the latch was switched off');
+      problems += 1;
+    }
+    if (agentCheck.afterLatchOff.connection !== 'open') {
+      console.error(
+        `\n✗ voice agent: the socket closed with the latch (${agentCheck.afterLatchOff.connection}); ` +
+          'switching the microphone off should not end the conversation',
+      );
+      problems += 1;
+    }
+    for (const n of agentCheck.noise) {
+      console.error(`\n✗ voice agent: ${n}`);
       problems += 1;
     }
   }

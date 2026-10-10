@@ -31,6 +31,8 @@
     </div>
 
     <div class="dock">
+      <p class="transcript" id="transcript" role="log" aria-live="polite" aria-label="Conversation"></p>
+
       <form class="say" id="say-form" aria-label="Make Jarvis speak">
       <label class="say__label" for="voice-select">Voice</label>
       <select class="say__voice" id="voice-select"></select>
@@ -68,10 +70,18 @@
       </div>
 
       <div class="controls__group">
-        <p class="controls__legend" id="legend-voice">Voice</p>
-        <div class="controls__row" role="group" aria-labelledby="legend-voice">
-          <button class="chip" type="button" id="mic-button" aria-pressed="false">Microphone</button>
-          <button class="chip" type="button" id="tone-button" aria-pressed="false">Test tone</button>
+        <p class="controls__legend" id="legend-talk">Conversation</p>
+        <div class="controls__row" role="group" aria-labelledby="legend-talk">
+          <button class="chip" type="button" id="talk-button" aria-pressed="false">Talk</button>
+          <button class="chip" type="button" id="end-button">End</button>
+        </div>
+      </div>
+
+      <div class="controls__group">
+        <p class="controls__legend" id="legend-input">Test</p>
+        <div class="controls__row" role="group" aria-labelledby="legend-input">
+          <button class="chip" type="button" id="mic-button" aria-pressed="false">Mic</button>
+          <button class="chip" type="button" id="tone-button" aria-pressed="false">Tone</button>
         </div>
       </div>
 
@@ -85,7 +95,7 @@
       </div>
       </nav>
 
-      <p class="hint">Keys <kbd>1</kbd>–<kbd>6</kbd> switch state · <kbd>M</kbd> mic · <kbd>T</kbd> tone</p>
+      <p class="hint">Keys <kbd>1</kbd>–<kbd>6</kbd> state · <kbd>Space</kbd> talk · <kbd>M</kbd> mic · <kbd>T</kbd> tone</p>
     </div>
 
     <script type="module" src="./src/main.ts"></script>

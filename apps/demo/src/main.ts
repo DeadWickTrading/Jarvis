@@ -6,8 +6,10 @@ import {
   createElevenLabsVoice,
   createSceneSink,
   createSpeaker,
+  createVoiceAgent,
 } from '@deadwick/voice';
-import type { Speaker, VoiceAvailability, VoiceProvider } from '@deadwick/voice';
+import type { Speaker, VoiceAgent, VoiceAvailability, VoiceProvider } from '@deadwick/voice';
+import { JARVIS_AGENT_SETTINGS } from './agent-settings.js';
 
 const container = document.querySelector<HTMLElement>('#scene');
 if (!container) throw new Error('#scene container is missing from the page');
@@ -21,6 +23,8 @@ if (!container) throw new Error('#scene container is missing from the page');
  *   ?motion=full          ignore the OS reduce-motion setting
  *   ?audio=off            disable the synthetic voice fallback
  *   ?ui=off               hide the demo chrome, leaving only the scene
+ *   ?agent=<ws url>       point the Voice Agent at a different socket, which
+ *                         is how the stub agent is exercised without Deepgram
  */
 const query = new URLSearchParams(location.search);
 const perfParam = query.get('perf');
@@ -67,6 +71,9 @@ const sayButton = need<HTMLButtonElement>('#say-button');
 const stopButton = need<HTMLButtonElement>('#stop-button');
 const voiceSelect = need<HTMLSelectElement>('#voice-select');
 const voiceStatus = need<HTMLElement>('#voice-status');
+const talkButton = need<HTMLButtonElement>('#talk-button');
+const endButton = need<HTMLButtonElement>('#end-button');
+const transcript = need<HTMLElement>('#transcript');
 
 // --- state ------------------------------------------------------------------
 
@@ -340,6 +347,65 @@ stopButton.addEventListener('click', () => speaker.stop());
 
 void probeVoices();
 
+// --- the conversation ---------------------------------------------------------
+
+/**
+ * The Voice Agent: listen, think and speak over one socket.
+ *
+ * The microphone is a latch, not a hold. Press Talk and it stays on through
+ * as many exchanges as you like; press it again and the capture stops and the
+ * media tracks are released, so the browser's recording indicator goes out
+ * rather than staying lit over a promise that nothing is listening.
+ *
+ * The socket stays open in between, kept alive, so switching back on is
+ * instant and Jarvis keeps the thread of the conversation. End closes it.
+ */
+const sceneSink = createSceneSink({
+  getAudioContext: () => scene.getAudioContext(),
+  setPlaybackSource: (node) => scene.setPlaybackSource(node),
+});
+
+const agentUrlOverride = query.get('agent');
+
+const agent: VoiceAgent = createVoiceAgent({
+  scene: {
+    setState: (state) => setState(state),
+    getState: () => scene.getState(),
+  },
+  sink: sceneSink,
+  settings: JARVIS_AGENT_SETTINGS,
+  ...(agentUrlOverride ? { url: agentUrlOverride } : {}),
+  onStatus: (status) => {
+    talkButton.setAttribute('aria-pressed', String(status.micOpen));
+    talkButton.textContent = status.micArming
+      ? 'Opening…'
+      : status.micOpen
+        ? 'Listening'
+        : 'Talk';
+    endButton.disabled = status.connection === 'closed';
+  },
+  onTranscript: (role, text) => {
+    transcript.dataset.role = role;
+    transcript.replaceChildren();
+    const label = document.createElement('b');
+    label.textContent = role === 'user' ? 'You' : 'Jarvis';
+    transcript.append(label, document.createTextNode(text));
+  },
+  onInfo: (message) => showVoiceStatus(message),
+  onError: (error) => showVoiceStatus(error.message, 'error'),
+});
+
+talkButton.addEventListener('click', () => {
+  void agent.toggleMic().catch((error: Error) => showVoiceStatus(error.message, 'error'));
+});
+
+endButton.addEventListener('click', () => {
+  agent.end();
+  transcript.replaceChildren();
+  showVoiceStatus('Conversation ended.');
+});
+endButton.disabled = true;
+
 // --- keyboard ----------------------------------------------------------------
 
 document.addEventListener('keydown', (event) => {
@@ -354,6 +420,11 @@ document.addEventListener('keydown', (event) => {
   }
   if (event.key.toLowerCase() === 'm') micButton.click();
   if (event.key.toLowerCase() === 't') toneButton.click();
+  // Space is the natural key for a talk latch, and it must not also scroll.
+  if (event.code === 'Space') {
+    event.preventDefault();
+    talkButton.click();
+  }
 });
 
 // --- readout -----------------------------------------------------------------
@@ -387,10 +458,11 @@ function recreateScene(): void {
 }
 
 // Exposed so the screenshot harness and manual poking can drive the scene.
-Object.assign(window, { scene, recreateScene, speaker });
+Object.assign(window, { scene, recreateScene, speaker, agent });
 
 window.addEventListener('beforeunload', () => {
   cancelAnimationFrame(readoutHandle);
+  agent.end();
   speaker.stop();
   for (const provider of providers) provider.dispose?.();
   stopMic();

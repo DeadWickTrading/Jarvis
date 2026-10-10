@@ -11,7 +11,8 @@ space. If it ever looks busy when nothing is happening, turn it down.
 
 ```
 packages/orb-engine    the engine: framework-free TypeScript, three.js, no backend
-packages/voice         speech: browser synthesis, Deepgram Aura, an ElevenLabs slot
+packages/voice         speech: browser synthesis, Deepgram Aura, an ElevenLabs
+                       slot, and the Voice Agent conversation loop
 apps/demo              a Vite page that embeds both, with a control for every state
 server/                the speech proxy, so API keys never reach the browser
 scripts/               token generation, the screenshot harness, a PNG reader
@@ -99,13 +100,13 @@ silent.
 
 ### Keys never reach the browser
 
-`server/tts-proxy.mjs` holds the credentials. The browser sends text and
+`server/speech-proxy.mjs` holds the credentials. The browser sends text and
 receives audio; the key stays on the server. It is plain Node with no build
 step, so the same file is Vite middleware in development and a route in any
 server in production:
 
 ```js
-import { createTtsProxy } from './server/tts-proxy.mjs';
+import { createTtsProxy } from './server/speech-proxy.mjs';
 app.use(createTtsProxy());         // reads process.env
 ```
 
@@ -131,6 +132,85 @@ amplitude follows a speech-like envelope. Every link is exercised — proxy,
 fetch, decode, playback, the orb's tap, the galaxy's response — except
 Deepgram's own servers, which is the one link an API key would test and
 nothing else would.
+
+## Talking back: the Voice Agent
+
+One socket carries the whole conversation — Deepgram listens, a thinking
+model answers, Aura speaks — and the orb follows its events.
+
+```bash
+cp .env.example .env     # add DEEPGRAM_API_KEY
+npm run dev              # then press Talk, or the space bar
+```
+
+Jarvis's persona, voices and keyterms live in `apps/demo/src/agent-settings.ts`.
+That file is the Settings message sent when the socket opens; edit it there.
+
+### The microphone is a latch
+
+Press **Talk** and it stays on, through as many exchanges as you like. Press
+it again and it stops. Nothing is held down.
+
+Switching it off stops the capture **and the media tracks**, so the browser's
+recording indicator actually goes out. Keeping the stream open and merely
+ignoring its frames would be less work and a quieter lie: the light would
+stay lit over a promise that nothing was listening.
+
+The socket stays open in between, kept alive, so switching back on is instant
+and Jarvis keeps the thread. **End** closes it.
+
+### What the orb shows
+
+| Situation | State |
+|---|---|
+| Socket opening, or microphone permission outstanding | `arming` |
+| Microphone latched on, nobody talking | `listening` |
+| `AgentThinking` | `processing` |
+| Agent audio actually playing | `speaking` |
+| Socket failed | `error` |
+
+That mapping is one pure function with its own tests, not a scattering of
+`setState` calls across event handlers, because several of these are true at
+once — the agent can still be speaking while you interrupt it.
+
+Two details worth knowing:
+
+- **`AgentAudioDone` is not the end of the agent's voice.** Deepgram documents
+  it as "the last chunk has been sent", and chunks already received are still
+  in the local playback queue. The orb leaves `speaking` when the queue
+  drains, so it matches what you can actually hear.
+- **The sample rate is corrected at runtime.** An AudioContext runs at 44100
+  on plenty of hardware. Declaring 48000 while sending 44100 makes the agent
+  hear a chipmunk and transcribe nonsense, so the real rate is read from the
+  context and sent instead.
+
+### Credentials on a WebSocket
+
+A browser cannot set an Authorization header on a WebSocket handshake, so the
+key cannot travel the usual way — and sending the long-lived key at all would
+publish it. The proxy exchanges it for a token that expires in thirty seconds
+(`POST /api/agent/token`), and the browser uses that.
+
+How the token should then be attached is genuinely ambiguous: Deepgram
+documents `Sec-WebSocket-Protocol: token, <credential>`, while community
+reports say a JWT needs `?access_token=` in the query string instead. A
+rejected handshake in a browser gives back nothing but close code 1006, so
+guessing wrong is an afternoon of silence with no error to read. The client
+therefore tries each form in turn and reports which one the server accepted.
+Pin it with the `strategies` option once you know.
+
+### Testing the agent without an account
+
+```bash
+./scripts/preview.sh restart --stubs
+npm run shots -- --checks-only
+```
+
+`scripts/stub-agent.mjs` talks the protocol: it accepts either credential
+form, answers Settings, scripts a full turn when it hears audio, and sends its
+voice as raw PCM. The check presses Talk, asserts the orb passed through
+arming, speaking and back to listening while riding a non-zero level, and that
+switching the latch off closes the microphone while leaving the socket open.
 
 ## Using the engine
 
@@ -198,7 +278,7 @@ state table, the easing, the audio bands, the synthetic envelope, the seeded
 layout and the performance decision are each small modules with unit tests
 and no WebGL in them. The same applies to speech: voice selection, text
 chunking, the proxy and the state orchestration are all tested against fakes.
-157 tests run in a couple of seconds, in Node, with no browser.
+181 tests run in a couple of seconds, in Node, with no browser.
 
 **All state lives in one table.** `states.ts` holds every visual parameter for
 every state in one object. Each frame every parameter moves part of the way
@@ -304,6 +384,9 @@ It also checks the things a still screenshot cannot show:
 - **Speech works end to end.** Pick a voice, type, press Speak — then assert
   the orb passed through thinking, reached speaking, rode a non-zero voice
   level and returned to idle.
+- **The conversation loop works end to end**, against a stub that talks
+  Deepgram's agent protocol: token, handshake, settings, microphone capture,
+  events, PCM playback, and the latch.
 
 Every one of these exists because something was wrong and a screenshot was
 the only thing that said so.

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 // The proxy is plain Node, deliberately framework-free so it can be Vite
 // middleware in dev and a route in any server in production.
-import { createTtsProxy } from '../../../server/tts-proxy.mjs';
-import type { UpstreamResponse } from '../../../server/tts-proxy.mjs';
+import { createTtsProxy } from '../../../server/speech-proxy.mjs';
+import type { UpstreamResponse } from '../../../server/speech-proxy.mjs';
 
 const KEY = 'super-secret-key-do-not-leak';
 

@@ -28,6 +28,18 @@ export {
 } from './voices.js';
 export type { VoiceLike, VoicePreference, VoiceChoice } from './voices.js';
 
+export { createVoiceAgent } from './agent/agent.js';
+export type { VoiceAgent, VoiceAgentOptions } from './agent/agent.js';
+export { connectAgent, DEFAULT_AGENT_URL, DEFAULT_AUTH_STRATEGIES } from './agent/connection.js';
+export type { AgentAuthStrategy, AgentConnection } from './agent/connection.js';
+export { resolveOrbState, IDLE_STATUS } from './agent/state.js';
+export type { AgentStatus, AgentConnection as AgentConnectionState } from './agent/state.js';
+export { floatToInt16, int16ToFloat, decodePcm16, rms } from './agent/pcm.js';
+export { createPcmPlayer } from './agent/playback.js';
+export type { PcmPlayer } from './agent/playback.js';
+export { createMicCapture } from './agent/capture.js';
+export type { MicCapture } from './agent/capture.js';
+
 export type {
   AudioSink,
   SpeakOptions,

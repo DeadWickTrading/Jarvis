@@ -71,6 +71,20 @@ function speechLike(text) {
 const server = createServer((req, res) => {
   const url = new URL(req.url ?? '/', `http://127.0.0.1:${PORT}`);
 
+  // The Voice Agent path needs a short-lived token before it can open a
+  // socket, so the stub mints one too. The stub agent only checks that a
+  // credential arrived, not what it says.
+  if (url.pathname === '/v1/auth/grant') {
+    if (!(req.headers.authorization ?? '').startsWith('Token ')) {
+      res.writeHead(401, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ err_msg: 'stub: missing Token authorization' }));
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(JSON.stringify({ access_token: 'stub-access-token', expires_in: 30 }));
+    return;
+  }
+
   if (!url.pathname.startsWith('/v1/speak')) {
     res.writeHead(404).end('not found');
     return;
