@@ -12,7 +12,8 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/voice.js"
     },
-    "./standalone": "./dist/jarvis.standalone.js"
+    "./standalone": "./dist/jarvis.standalone.js",
+    "./standalone-iife": "./dist/jarwick.standalone.iife.js"
   },
   "files": [
     "dist",
@@ -20,9 +21,10 @@
   ],
   "sideEffects": false,
   "scripts": {
-    "build": "vite build && vite build --config vite.standalone.config.ts && tsc -p tsconfig.build.json",
+    "build": "vite build && npm run build:standalone && npm run build:standalone-iife && tsc -p tsconfig.build.json",
     "test": "vitest run",
-    "build:standalone": "vite build --config vite.standalone.config.ts"
+    "build:standalone": "vite build --config vite.standalone.config.ts && node compress-standalone.mjs dist/jarvis.standalone.js",
+    "build:standalone-iife": "vite build --config vite.standalone-iife.config.ts"
   },
   "dependencies": {
     "@deadwick/orb-engine": "0.1.0"
@@ -31,6 +33,7 @@
     "typescript": "5.9.3",
     "vite": "7.3.7",
     "vitest": "5.0.3",
-    "@types/node": "22.18.1"
+    "@types/node": "22.18.1",
+    "esbuild": "0.28.2"
   }
 }

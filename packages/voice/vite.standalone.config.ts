@@ -24,5 +24,13 @@ export default defineConfig({
     emptyOutDir: false,
     sourcemap: false,
     target: 'es2022',
+    // Mangles identifiers and simplifies syntax — but Vite hard-codes
+    // minifyWhitespace to false whenever the output is build.lib + format
+    // 'es', whatever this says, because an ES library build is meant to be
+    // fed into another bundler that will minify it again downstream. This
+    // one has no downstream; it is served straight to a browser. The
+    // remaining whitespace (23,000 lines of it) is stripped by
+    // compress-standalone.mjs, run right after this in package.json.
+    minify: 'esbuild',
   },
 });
