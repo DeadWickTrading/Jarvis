@@ -69,7 +69,7 @@ export const JARWICK_AGENT_SETTINGS: Record<string, unknown> = {
       provider: {
         type: 'anthropic',
         model: 'claude-sonnet-5-5',
-        temperature: 0.4,
+        // No temperature: Anthropic rejects it for this model (400 "temperature is deprecated").
       },
       prompt: [
         '#Role',
