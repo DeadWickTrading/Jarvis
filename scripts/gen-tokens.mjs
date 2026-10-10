@@ -97,7 +97,7 @@ function render() {
 function renderFavicon() {
   return [
     '<!-- GENERATED FILE - do not edit. Source: packages/orb-engine/src/brand.ts -->',
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Jarvis">',
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Jarwick">',
     `  <rect width="32" height="32" rx="7" fill="${BRAND.ink}" />`,
     `  <circle cx="16" cy="16" r="9" fill="none" stroke="${BRAND.accent}" stroke-width="1.6" opacity="0.9" />`,
     `  <ellipse cx="16" cy="16" rx="9" ry="3.4" fill="none" stroke="${BRAND.accent}" stroke-width="1.1" opacity="0.55" />`,

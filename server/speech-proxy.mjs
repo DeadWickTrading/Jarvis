@@ -342,7 +342,7 @@ export function ttsProxyPlugin(options = {}) {
   };
 
   return {
-    name: 'jarvis-speech-proxy',
+    name: 'jarwick-speech-proxy',
     configureServer: install,
     configurePreviewServer: install,
     closeBundle() {

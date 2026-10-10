@@ -14,7 +14,7 @@ export interface BrowserVoiceOptions {
  * The operating system's own speech synthesis.
  *
  * Free, offline, no key, available in every modern browser — and the reason
- * Jarvis can talk before any account exists.
+ * Jarwick can talk before any account exists.
  *
  * Its one real limitation is that it provides no audio stream. The Web Speech
  * API hands the utterance straight to the platform's synthesiser and the
@@ -98,9 +98,15 @@ export function createBrowserVoice(options: BrowserVoiceOptions = {}): VoiceProv
 
       const choice = await chooseVoice();
       const utterance = new SpeechSynthesisUtterance(text);
-      if (choice) {
+      // Only take the chosen voice if it actually speaks English. On a Mac set to
+      // another language the ladder can bottom out on, say, a Norwegian voice,
+      // which then reads English with a Norwegian accent; asking for en-GB lets
+      // the platform pick a British voice instead.
+      if (choice && /^en\b/i.test(choice.voice.lang)) {
         utterance.voice = choice.voice as SpeechSynthesisVoice;
         utterance.lang = choice.voice.lang;
+      } else {
+        utterance.lang = 'en-GB';
       }
       utterance.rate = options.rate ?? 1;
       utterance.pitch = options.pitch ?? 1;

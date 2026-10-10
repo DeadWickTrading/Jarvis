@@ -66,7 +66,7 @@ describe('chunkText', () => {
 
   it('preserves the words, in order', () => {
     const text =
-      'Good day, sir. Jarvis Wick online. What do you need? The call wall sits at twenty-one thousand four hundred.';
+      'Good day, sir. Jarwick online. What do you need? The call wall sits at twenty-one thousand four hundred.';
     const rejoined = chunkText(text, 30).join(' ');
     expect(rejoined.replace(/\s+/g, ' ')).toBe(text.replace(/\s+/g, ' '));
   });

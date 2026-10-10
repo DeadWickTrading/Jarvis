@@ -17,8 +17,11 @@ export default defineConfig({
   build: {
     lib: {
       entry: resolve(import.meta.dirname, 'src/standalone.ts'),
-      formats: ['es'],
-      fileName: () => 'jarvis.standalone.js',
+      formats: ['es', 'iife'],
+      // The IIFE build sets window.Jarwick and works from a page opened as a
+      // file (file://), where ES module imports are blocked - e.g. the HQ page.
+      name: 'Jarwick',
+      fileName: (format) => (format === 'es' ? 'jarwick.standalone.js' : 'jarwick.standalone.iife.js'),
     },
     rollupOptions: { external: [] },
     emptyOutDir: false,

@@ -9,7 +9,7 @@ import {
   createVoiceAgent,
 } from '@deadwick/voice';
 import type { Speaker, VoiceAgent, VoiceAvailability, VoiceProvider } from '@deadwick/voice';
-import { JARVIS_AGENT_SETTINGS } from './agent-settings.js';
+import { JARWICK_AGENT_SETTINGS } from './agent-settings.js';
 
 const container = document.querySelector<HTMLElement>('#scene');
 if (!container) throw new Error('#scene container is missing from the page');
@@ -228,7 +228,7 @@ toneButton.addEventListener('click', playTestTone);
 // --- speech ------------------------------------------------------------------
 
 /**
- * The three ways Jarvis can talk.
+ * The three ways Jarwick can talk.
  *
  * None of them names a model here on purpose. The server chooses, from
  * DEEPGRAM_TTS_MODEL and ELEVENLABS_VOICE_ID, so changing the voice is an
@@ -358,7 +358,7 @@ void probeVoices();
  * rather than staying lit over a promise that nothing is listening.
  *
  * The socket stays open in between, kept alive, so switching back on is
- * instant and Jarvis keeps the thread of the conversation. End closes it.
+ * instant and Jarwick keeps the thread of the conversation. End closes it.
  */
 const sceneSink = createSceneSink({
   getAudioContext: () => scene.getAudioContext(),
@@ -367,13 +367,19 @@ const sceneSink = createSceneSink({
 
 const agentUrlOverride = query.get('agent');
 
+// Settings with Henrik's HQ snapshot in the prompt, when the HQ bridge is
+// running; the static persona otherwise.
+const agentSettings: Record<string, unknown> = await fetch('/api/hq/agent-settings')
+  .then((r) => (r.ok ? (r.json() as Promise<Record<string, unknown>>) : JARWICK_AGENT_SETTINGS))
+  .catch(() => JARWICK_AGENT_SETTINGS);
+
 const agent: VoiceAgent = createVoiceAgent({
   scene: {
     setState: (state) => setState(state),
     getState: () => scene.getState(),
   },
   sink: sceneSink,
-  settings: JARVIS_AGENT_SETTINGS,
+  settings: agentSettings,
   ...(agentUrlOverride ? { url: agentUrlOverride } : {}),
   onStatus: (status) => {
     talkButton.setAttribute('aria-pressed', String(status.micOpen));
@@ -388,7 +394,7 @@ const agent: VoiceAgent = createVoiceAgent({
     transcript.dataset.role = role;
     transcript.replaceChildren();
     const label = document.createElement('b');
-    label.textContent = role === 'user' ? 'You' : 'Jarvis';
+    label.textContent = role === 'user' ? 'You' : 'Jarwick';
     transcript.append(label, document.createTextNode(text));
   },
   onInfo: (message) => showVoiceStatus(message),

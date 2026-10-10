@@ -61,6 +61,30 @@ body {
   color: var(--dw-accent);
 }
 
+/* The "i" in Jarwick is a candle, like the one in Deadwick: a lime body with
+   a thin wick through it. */
+.wordmark .wick-i {
+  position: relative;
+  display: inline-block;
+  width: 0.2em;
+  height: 0.6em;
+  margin: 0 0.04em 0 -0.06em;
+  vertical-align: -0.01em;
+  border-radius: 1px;
+  background: var(--dw-accent);
+}
+
+.wordmark .wick-i::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: -0.24em;
+  bottom: -0.18em;
+  width: 1.5px;
+  transform: translateX(-50%);
+  background: var(--dw-accent);
+}
+
 /* --- readout ------------------------------------------------------------- */
 
 .readout {

@@ -1,6 +1,8 @@
 import { resolve } from 'node:path';
 import { defineConfig, loadEnv } from 'vite';
+import { hqBridgePlugin } from '../../server/hq-bridge.mjs';
 import { ttsProxyPlugin } from '../../server/speech-proxy.mjs';
+import { JARWICK_AGENT_SETTINGS } from './src/agent-settings.ts';
 
 /**
  * The demo resolves the engine and the voice package to their TypeScript
@@ -17,7 +19,11 @@ export default defineConfig(({ mode }) => {
   return {
     // Explicit process environment wins, so a test run or a deployment can
     // override .env without editing it.
-    plugins: [ttsProxyPlugin({ env: { ...env, ...process.env } })],
+    plugins: [
+      ttsProxyPlugin({ env: { ...env, ...process.env } }),
+      // HQ at /hq/ and a snapshot of it for the agent (HQ_DIR overrides the folder).
+      hqBridgePlugin({ settings: JARWICK_AGENT_SETTINGS, hqDir: env.HQ_DIR || process.env.HQ_DIR }),
+    ],
     resolve: {
       alias: {
         '@deadwick/orb-engine': resolve(

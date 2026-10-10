@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <title>Jarvis — living galaxy</title>
+    <title>Jarwick — living galaxy</title>
     <meta
       name="description"
       content="A wireframe orb in a deep-space nebula, surrounded by a slowly turning network of glowing star clusters that answers the AI's voice."
@@ -16,7 +16,7 @@
   <body>
     <div id="scene"></div>
 
-    <h1 class="wordmark">Jarvis<span>.</span></h1>
+    <h1 class="wordmark" aria-label="Jarwick">Jarw<span class="wick-i" aria-hidden="true"></span>ck<span>.</span></h1>
 
     <div class="readout">
       <p class="readout__state" id="state-label">Idle</p>
@@ -33,7 +33,7 @@
     <div class="dock">
       <p class="transcript" id="transcript" role="log" aria-live="polite" aria-label="Conversation"></p>
 
-      <form class="say" id="say-form" aria-label="Make Jarvis speak">
+      <form class="say" id="say-form" aria-label="Make Jarwick speak">
       <label class="say__label" for="voice-select">Voice</label>
       <select class="say__voice" id="voice-select"></select>
       <input
@@ -42,8 +42,8 @@
         type="text"
         autocomplete="off"
         spellcheck="false"
-        aria-label="What Jarvis should say"
-        value="Good day, sir. Jarvis Wick online. What do you need?"
+        aria-label="What Jarwick should say"
+        value="Good day, sir. Jarwick online. What do you need?"
       />
       <button class="say__go chip" type="submit" id="say-button">Speak</button>
       <button class="say__go chip" type="button" id="stop-button">Stop</button>

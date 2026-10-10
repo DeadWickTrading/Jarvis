@@ -1,4 +1,4 @@
-# Jarvis — a living galaxy
+# Jarwick — a living galaxy
 
 A full-screen scene that gives an AI a face: a wireframe orb floating in a
 deep-space nebula, surrounded by a slowly turning network of glowing star
@@ -77,7 +77,7 @@ const speaker = createSpeaker({
   provider: createDeepgramVoice({ model: 'aura-helios-en' }),
 });
 
-await speaker.speak('Good day, sir. Jarvis Wick online.');
+await speaker.speak('Good day, sir. Jarwick online.');
 ```
 
 ### The one thing worth knowing up front
@@ -158,7 +158,7 @@ cp .env.example .env     # add DEEPGRAM_API_KEY
 npm run dev              # then press Talk, or the space bar
 ```
 
-Jarvis's persona, voices and keyterms live in `apps/demo/src/agent-settings.ts`.
+Jarwick's persona, voices and keyterms live in `apps/demo/src/agent-settings.ts`.
 That file is the Settings message sent when the socket opens; edit it there.
 
 ### The microphone is a latch
@@ -172,7 +172,7 @@ ignoring its frames would be less work and a quieter lie: the light would
 stay lit over a promise that nothing was listening.
 
 The socket stays open in between, kept alive, so switching back on is instant
-and Jarvis keeps the thread. **End** closes it.
+and Jarwick keeps the thread. **End** closes it.
 
 ### What the orb shows
 
