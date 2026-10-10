@@ -9,7 +9,7 @@
  * a library meant to be handed to another bundler, which will minify it
  * again itself. It does not make sense here: this file is the final
  * artifact, served straight to a browser with nothing downstream. Left as
- * Vite produces it, jarvis.standalone.js was 23,410 lines and 918KB for code
+ * Vite produces it, jarwick.standalone.js was 23,410 lines and 918KB for code
  * that compacts to under 400KB.
  *
  * This runs esbuild directly on Vite's already-correct output — module

@@ -18,7 +18,9 @@ export default defineConfig({
     lib: {
       entry: resolve(import.meta.dirname, 'src/standalone.ts'),
       formats: ['es'],
-      fileName: () => 'jarvis.standalone.js',
+      // The IIFE twin (window.Jarwick, works from file:// e.g. the HQ page)
+      // is built by vite.standalone-iife.config.ts.
+      fileName: () => 'jarwick.standalone.js',
     },
     rollupOptions: { external: [] },
     emptyOutDir: false,

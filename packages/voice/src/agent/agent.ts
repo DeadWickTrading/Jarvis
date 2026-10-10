@@ -138,7 +138,7 @@ export function createVoiceAgent(options: VoiceAgentOptions): VoiceAgent {
    * Answer a tool call.
    *
    * The only function configured is `end_conversation`, which the prompt uses
-   * to let Jarvis stand down when asked to stop. That closes the latch, which
+   * to let Jarwick stand down when asked to stop. That closes the latch, which
    * is exactly what the user would otherwise do by hand.
    *
    * The response shape follows Deepgram's documented FunctionCallResponse.
@@ -159,7 +159,7 @@ export function createVoiceAgent(options: VoiceAgentOptions): VoiceAgent {
       });
 
       if (name === 'end_conversation') {
-        options.onInfo?.('Jarvis ended the conversation.');
+        options.onInfo?.('Jarwick ended the conversation.');
         void setMicOpen(false);
       }
     }

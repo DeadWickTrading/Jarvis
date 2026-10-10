@@ -1,5 +1,5 @@
 /**
- * Jarvis's Voice Agent configuration.
+ * Jarwick's Voice Agent configuration.
  *
  * This is the file to edit. It is the Deepgram Settings message sent the
  * moment the socket opens: who listens, who thinks, who speaks, and the
@@ -11,7 +11,7 @@
  * chipmunk and transcribe nonsense. The engine reads the real rate from the
  * AudioContext and corrects it before sending.
  */
-export const JARVIS_AGENT_SETTINGS: Record<string, unknown> = {
+export const JARWICK_AGENT_SETTINGS: Record<string, unknown> = {
   type: 'Settings',
   audio: {
     input: {
@@ -43,7 +43,7 @@ export const JARVIS_AGENT_SETTINGS: Record<string, unknown> = {
         keyterms: [
           'NQ',
           'Deadwick',
-          'jarvis',
+          'jarwick',
           'ES',
           'Mnq',
           'mes',
@@ -67,13 +67,13 @@ export const JARVIS_AGENT_SETTINGS: Record<string, unknown> = {
     },
     think: {
       provider: {
-        type: 'google',
-        model: 'gemini-3.1-flash-lite',
+        type: 'anthropic',
+        model: 'claude-sonnet-5-5',
         temperature: 0.4,
       },
       prompt: [
         '#Role',
-        "You are Jarvis, Henrik's personal trading assistant, speaking by voice. Henrik trades NQ and ES futures (MNQ/MES) using gamma levels, P2P and his own Wick method.",
+        "You are Jarwick, Henrik's personal trading assistant, speaking by voice. Henrik trades NQ and ES futures (MNQ/MES) using gamma levels, P2P and his own Wick method.",
         '',
         '#Style',
         'Composed British butler-engineer: calm, precise, understated, occasional dry wit. Say "sir" sparingly. Lead with the answer in one sentence; details only if asked. Short spoken sentences, no lists or symbols. Say prices like a trader: "thirty-one thousand two-forty". Deliver bad news calmly and straight.',
@@ -107,6 +107,6 @@ export const JARVIS_AGENT_SETTINGS: Record<string, unknown> = {
         },
       ],
     },
-    greeting: 'Good day, sir. Jarvis Wick online. What do you need?',
+    greeting: 'Good day, sir. Jarwick online. What do you need?',
   },
 };

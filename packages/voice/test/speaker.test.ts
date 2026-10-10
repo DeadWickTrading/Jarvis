@@ -73,7 +73,7 @@ describe('createSpeaker', () => {
     const { provider } = fakeProvider({ startDelay: 40 });
     const speaker = createSpeaker({ scene, provider });
 
-    const done = speaker.speak('Jarvis Wick online.');
+    const done = speaker.speak('Jarwick online.');
     // Mid-flight: the request is out but nothing is audible yet.
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(scene.getState()).toBe('processing');

@@ -1,7 +1,7 @@
 {
   "name": "@deadwick/voice",
   "version": "0.1.0",
-  "description": "Pluggable speech for Jarvis: browser synthesis, Deepgram Aura, and a slot for ElevenLabs.",
+  "description": "Pluggable speech for Jarwick: browser synthesis, Deepgram Aura, and a slot for ElevenLabs.",
   "type": "module",
   "license": "UNLICENSED",
   "main": "./dist/voice.js",
@@ -12,7 +12,7 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/voice.js"
     },
-    "./standalone": "./dist/jarvis.standalone.js",
+    "./standalone": "./dist/jarwick.standalone.js",
     "./standalone-iife": "./dist/jarwick.standalone.iife.js"
   },
   "files": [
@@ -23,7 +23,7 @@
   "scripts": {
     "build": "vite build && npm run build:standalone && npm run build:standalone-iife && tsc -p tsconfig.build.json",
     "test": "vitest run",
-    "build:standalone": "vite build --config vite.standalone.config.ts && node compress-standalone.mjs dist/jarvis.standalone.js",
+    "build:standalone": "vite build --config vite.standalone.config.ts && node compress-standalone.mjs dist/jarwick.standalone.js",
     "build:standalone-iife": "vite build --config vite.standalone-iife.config.ts"
   },
   "dependencies": {

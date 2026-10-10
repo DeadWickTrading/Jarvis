@@ -13,7 +13,7 @@ import { floatToInt16 } from './pcm.js';
  * fifty while staying far below any latency anyone can hear.
  */
 const CAPTURE_WORKLET = `
-class JarvisCaptureProcessor extends AudioWorkletProcessor {
+class JarwickCaptureProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.target = options.processorOptions.framesPerChunk;
@@ -40,7 +40,7 @@ class JarvisCaptureProcessor extends AudioWorkletProcessor {
     return true;
   }
 }
-registerProcessor('jarvis-capture', JarvisCaptureProcessor);
+registerProcessor('jarwick-capture', JarwickCaptureProcessor);
 `;
 
 export interface MicCapture {
@@ -64,7 +64,7 @@ const loadedContexts = new WeakSet<AudioContext>();
 async function ensureWorklet(context: AudioContext): Promise<void> {
   if (loadedContexts.has(context)) return;
   if (!context.audioWorklet) {
-    throw new Error('jarvis: this browser has no AudioWorklet, so the microphone cannot be used');
+    throw new Error('jarwick: this browser has no AudioWorklet, so the microphone cannot be used');
   }
   workletUrl ??= URL.createObjectURL(new Blob([CAPTURE_WORKLET], { type: 'application/javascript' }));
   await context.audioWorklet.addModule(workletUrl);
@@ -89,7 +89,7 @@ export async function createMicCapture(options: MicCaptureOptions): Promise<MicC
   );
 
   const source = context.createMediaStreamSource(stream);
-  const worklet = new AudioWorkletNode(context, 'jarvis-capture', {
+  const worklet = new AudioWorkletNode(context, 'jarwick-capture', {
     numberOfInputs: 1,
     numberOfOutputs: 0,
     processorOptions: { framesPerChunk },

@@ -431,7 +431,7 @@ if (!only || checksOnly) {
       { timeout: 10_000 },
     );
     await page.selectOption('#voice-select', 'deepgram');
-    await page.fill('#say-text', 'Good day, sir. Jarvis Wick online. What do you need?');
+    await page.fill('#say-text', 'Good day, sir. Jarwick online. What do you need?');
 
     const seen = new Set();
     const sample = async () => {

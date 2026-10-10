@@ -10,7 +10,7 @@ import { defineConfig } from 'vite';
  * everything to `window.Jarwick`, so a page that cannot or does not want to
  * add `type="module"` to its script tag still gets the whole API.
  *
- * Prefer the ES module build (jarvis.standalone.js) when the host page is
+ * Prefer the ES module build (jarwick.standalone.js) when the host page is
  * free to use `<script type="module">` — it does not pollute the global
  * namespace. The two are close in size once both are minified (this one is
  * marginally smaller, with no module wrapper to carry). This exists for

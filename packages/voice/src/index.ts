@@ -1,5 +1,5 @@
 /**
- * Speech for Jarvis.
+ * Speech for Jarwick.
  *
  * Three ways to talk behind one interface: the browser's own synthesiser
  * (free, offline, no key), Deepgram Aura (real audio the orb can ride), and

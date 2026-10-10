@@ -37,7 +37,7 @@ server/
 
 apps/demo/                The reference implementation — read this to see how
   src/main.ts             the pieces fit together.
-  src/agent-settings.ts   Jarvis's persona, voices and keyterms. EDIT HERE.
+  src/agent-settings.ts   Jarwick's persona, voices and keyterms. EDIT HERE.
 
 examples/embed.html       The minimal integration. Copy this.
 scripts/                  Token generation, screenshot harness, test stubs.
@@ -56,14 +56,14 @@ This is a static file and nothing else.
 npm ci
 npm run build -w @deadwick/orb-engine
 npm run build:standalone -w @deadwick/voice
-# copy packages/voice/dist/jarvis.standalone.js next to your page
+# copy packages/voice/dist/jarwick.standalone.js next to your page
 ```
 
 ```html
-<div id="jarvis" style="position: fixed; inset: 0"></div>
+<div id="jarwick" style="position: fixed; inset: 0"></div>
 <script type="module">
-  import { createOrbScene } from './jarvis.standalone.js';
-  const scene = createOrbScene(document.querySelector('#jarvis'));
+  import { createOrbScene } from './jarwick.standalone.js';
+  const scene = createOrbScene(document.querySelector('#jarwick'));
   scene.setState('listening');   // idle | arming | listening | processing | speaking | error
 </script>
 ```
@@ -74,12 +74,33 @@ bundler, import `@deadwick/orb-engine` instead and keep three.js external.
 
 The container needs a size and a position. The canvas fills it.
 
+### Level 1 from a page opened as a file (file://)
+
+Browsers block ES module imports on `file://`. For a page that is opened
+straight from disk (Henrik's HQ is), `npm run build:standalone -w
+@deadwick/voice` also writes `jarwick.standalone.iife.js`: a classic script
+that sets `window.Jarwick`.
+
+```html
+<div id="jarwick" style="position: fixed; inset: 0"></div>
+<script src="jarwick.standalone.iife.js"></script>
+<script>
+  const scene = Jarwick.createOrbScene(document.querySelector('#jarwick'));
+  const speaker = Jarwick.createSpeaker({ scene, provider: Jarwick.createBrowserVoice() });
+  speaker.speak('Good day, sir.');   // the Mac's own voice - no server, no key
+</script>
+```
+
+The HQ dock (`NQ-Cockpit/jarwick_block.html`, inserted with `add_jarwick.py`)
+is this, plus a stale-feed error state and a hide button that destroys the
+scene so it costs nothing while hidden.
+
 ### Level 2 — the orb speaks. Needs a server.
 
 Add text-to-speech. The orb rides the real waveform.
 
 ```js
-import { createSpeaker, createSceneSink, createDeepgramVoice } from './jarvis.standalone.js';
+import { createSpeaker, createSceneSink, createDeepgramVoice } from './jarwick.standalone.js';
 
 const speaker = createSpeaker({
   scene,
@@ -102,12 +123,12 @@ Microphone in, Deepgram listens, a model thinks, Aura speaks, all on one
 socket, with the orb following the agent's own events.
 
 ```js
-import { createVoiceAgent, createSceneSink } from './jarvis.standalone.js';
+import { createVoiceAgent, createSceneSink } from './jarwick.standalone.js';
 
 const agent = createVoiceAgent({
   scene,
   sink: createSceneSink(scene),
-  settings: JARVIS_AGENT_SETTINGS,      // copy apps/demo/src/agent-settings.ts
+  settings: JARWICK_AGENT_SETTINGS,      // copy apps/demo/src/agent-settings.ts
 });
 
 await agent.toggleMic();                // latch on; call again to switch off

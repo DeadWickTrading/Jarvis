@@ -1,11 +1,11 @@
 <!doctype html>
 <!--
-  Dropping Jarvis into an existing page.
+  Dropping Jarwick into an existing page.
 
   This is the whole integration: a positioned container, one module import,
   and a handle you drive from your own code. No build step, no framework.
 
-  Copy jarvis.standalone.js (packages/voice/dist/) next to your page and
+  Copy jarwick.standalone.js (packages/voice/dist/) next to your page and
   adjust the import path. Everything is inlined, including three.js.
 
   The orb alone needs no server. Speech and the conversation do — see
@@ -16,7 +16,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="data:," />
-    <title>Jarvis — embed example</title>
+    <title>Jarwick — embed example</title>
     <style>
       html,
       body {
@@ -28,7 +28,7 @@
       /* The engine fills whatever box you give it. This one is the window;
          a panel in your own layout works just as well, as long as it has a
          size and its own stacking context. */
-      #jarvis {
+      #jarwick {
         position: fixed;
         inset: 0;
       }
@@ -54,7 +54,7 @@
     </style>
   </head>
   <body>
-    <div id="jarvis"></div>
+    <div id="jarwick"></div>
 
     <div class="demo-controls">
       <button data-state="idle">Idle</button>
@@ -65,19 +65,19 @@
     </div>
 
     <script type="module">
-      import { createOrbScene } from '../packages/voice/dist/jarvis.standalone.js';
+      import { createOrbScene } from '../packages/voice/dist/jarwick.standalone.js';
 
-      const scene = createOrbScene(document.querySelector('#jarvis'), {
+      const scene = createOrbScene(document.querySelector('#jarwick'), {
         initialState: 'idle',
       });
 
-      // Drive it from wherever your app learns what Jarvis is doing.
+      // Drive it from wherever your app learns what Jarwick is doing.
       for (const button of document.querySelectorAll('[data-state]')) {
         button.addEventListener('click', () => scene.setState(button.dataset.state));
       }
 
       // Exposed so the page's own code — or a console — can drive it.
-      window.jarvis = scene;
+      window.jarwick = scene;
 
       window.addEventListener('beforeunload', () => scene.destroy());
     </script>
