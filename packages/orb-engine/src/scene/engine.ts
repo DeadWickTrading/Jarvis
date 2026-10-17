@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BRAND, hexToRgb } from '../brand.js';
+import { BRAND, hexToRgb, mixRgb } from '../brand.js';
 import { approach, clamp, rateFromPerFrame } from '../easing.js';
 import { analyseBins, createLevelSmoother } from '../audio/levels.js';
 import { syntheticLevels } from '../audio/synthetic.js';
@@ -10,6 +10,8 @@ import type { SceneParams } from '../states.js';
 import type {
   AudioLevels,
   AudioTapSource,
+  CandleControl,
+  CandleMetrics,
   OrbSceneHandle,
   OrbSceneOptions,
   OrbState,
@@ -91,6 +93,11 @@ export class OrbEngine implements OrbSceneHandle {
   private readonly syntheticFallback: boolean;
   private motionScale = 1;
 
+  /** A host colour laid over the state colour, and how far it has faded in. */
+  private overrideColor: [number, number, number] = [1, 1, 1];
+  private overrideMix = 0;
+  private overrideTarget: readonly [number, number, number] | null = null;
+
   private resizeObserver: ResizeObserver | null = null;
   private motionQuery: MediaQueryList | null = null;
   private readonly onMotionChange: () => void;
@@ -131,7 +138,9 @@ export class OrbEngine implements OrbSceneHandle {
     // Drawn in this order every frame: sky, then the star network, then the
     // orb on a cleared depth buffer. One context, three passes.
     this.skyPass = new SkyPass(this.tier);
-    this.passes = [this.skyPass, new NetworkPass(this.tier, options.seed), this.orbPass];
+    this.passes = options.background === false
+      ? [this.orbPass]
+      : [this.skyPass, new NetworkPass(this.tier, options.seed), this.orbPass];
 
     this.liveRegion = (options.announceState ?? true) ? this.createLiveRegion() : null;
 
@@ -164,6 +173,16 @@ export class OrbEngine implements OrbSceneHandle {
 
   getState(): OrbState {
     return this.state;
+  }
+
+  setCandle(control: CandleControl | null): void {
+    if (this.destroyed) return;
+    this.orbPass.setCandle(control);
+    this.overrideTarget = control?.color ?? null;
+  }
+
+  getCandleMetrics(): CandleMetrics {
+    return this.orbPass.getCandleMetrics();
   }
 
   setMicSource(source: AudioTapSource | null): void {
@@ -369,13 +388,27 @@ export class OrbEngine implements OrbSceneHandle {
     this.animTime += dt * this.motionScale;
     this.noiseTime += dt * this.params.noiseSpeed * this.motionScale;
 
+    // The host's colour override crossfades at the state colour's own pace.
+    const target = this.overrideTarget;
+    if (target) {
+      for (let i = 0; i < 3; i += 1) {
+        this.overrideColor[i] = approach(this.overrideColor[i]!, target[i]!, OVERRIDE_RATE, dt);
+      }
+    }
+    this.overrideMix = approach(this.overrideMix, target ? 1 : 0, OVERRIDE_RATE, dt);
+    const stateColor = cycledColor(this.params, this.animTime);
+    const color =
+      this.overrideMix > 0.001
+        ? (mixRgb(stateColor, this.overrideColor, this.overrideMix) as [number, number, number])
+        : stateColor;
+
     const ctx: FrameContext = {
       dt: dt * this.motionScale,
       animTime: this.animTime,
       noiseTime: this.noiseTime,
       params: this.params,
       audio: this.audio,
-      color: cycledColor(this.params, this.animTime),
+      color,
       activity: activityLevel(this.params, this.audio, this.animTime),
       audioActive: this.audioActive,
       tier: this.tier,
@@ -392,6 +425,8 @@ export class OrbEngine implements OrbSceneHandle {
 
 /** How fast the high noise octave fades in and out with the audio route. */
 const AUDIO_FADE_RATE = rateFromPerFrame(0.04);
+/** The host colour override crossfades like a state colour: a flow, not a flip. */
+const OVERRIDE_RATE = rateFromPerFrame(0.07);
 
 /**
  * Mount a scene into `container`, which must be positioned and sized by CSS.

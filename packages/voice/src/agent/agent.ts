@@ -33,6 +33,9 @@ export interface VoiceAgent {
   readonly status: AgentStatus;
 }
 
+/** What Henrik says when he wants Jarwick to stop talking and listen (not to hang up). */
+const STOP_WORDS = /^\W*(stop|wait|hold on|hang on|hold it|quiet|shh+|enough|one moment|pause)\b[\w\s,!.]{0,12}$/i;
+
 /** Sample rate the agent is told to send its voice at. */
 function outputSampleRate(settings: Record<string, unknown>): number {
   const audio = settings.audio as { output?: { sample_rate?: number } } | undefined;
@@ -108,6 +111,12 @@ export function createVoiceAgent(options: VoiceAgentOptions): VoiceAgent {
         const role = String(event.role ?? 'assistant');
         const content = String(event.content ?? '');
         if (content) options.onTranscript?.(role, content);
+        // "Stop" means stop talking, not hang up: cut the voice at once and keep
+        // listening. The server's barge-in usually gets here first; this is the belt.
+        if (role === 'user' && STOP_WORDS.test(content)) {
+          player?.clear();
+          update({ agentSpeaking: false, agentThinking: false });
+        }
         break;
       }
 
@@ -121,8 +130,19 @@ export function createVoiceAgent(options: VoiceAgentOptions): VoiceAgent {
         // Deliberately not treated as the end of the agent's voice. Deepgram
         // documents this as "the last chunk has been sent", and chunks
         // already received are still sitting in the local queue. The orb
-        // leaves `speaking` when the player drains, not here.
+        // leaves `speaking` when the player drains, not here. A short reply
+        // may not have reached the prime target, so let it go now.
+        player?.flush();
         break;
+
+      case 'LatencyReport': {
+        // Where the time goes, in a line: every numeric field the report carries.
+        const nums = Object.entries(event)
+          .filter(([k, v]) => k !== 'type' && typeof v === 'number')
+          .map(([k, v]) => `${k.replace(/_ms$/, '')} ${(v as number) >= 100 ? `${((v as number) / 1000).toFixed(1)}s` : `${v}`}`);
+        options.onInfo?.(nums.length ? `Latency: ${nums.join(', ')}` : 'Latency report received.');
+        break;
+      }
 
       case 'FunctionCallRequest':
         handleFunctionCall(event);

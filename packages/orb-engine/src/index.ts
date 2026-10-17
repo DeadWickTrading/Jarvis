@@ -41,6 +41,8 @@ export type {
   AudioLevels,
   AudioRoute,
   AudioTapSource,
+  CandleControl,
+  CandleMetrics,
   OrbSceneHandle,
   OrbSceneOptions,
   OrbShape,

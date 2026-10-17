@@ -1,12 +1,12 @@
 import * as THREE from 'three';
 import { SIMPLEX_3D } from '../shaders/noise.js';
 import { setSrgb, srgbColor } from './color.js';
-import type { OrbShape, PerformanceTier } from '../types.js';
+import type { CandleControl, CandleMetrics, OrbShape, PerformanceTier } from '../types.js';
 import type { FrameContext, ScenePass } from './pass.js';
 import { buildCatGeometry, CAT_DEPTH, CAT_EYES } from './cat.js';
 import { TradeBands } from './trades.js';
 import { BRAND, hexToRgb } from '../brand.js';
-import { clamp01 } from '../easing.js';
+import { approach, clamp01, rateFromPerFrame } from '../easing.js';
 
 /** Icosahedron subdivision per tier. 24 reads as a fine mesh; 10 still reads. */
 const ORB_DETAIL: Record<PerformanceTier, number> = { high: 24, low: 10 };
@@ -20,6 +20,17 @@ const WICK_BODY = { a: 0.42, b: 0.78, c: 0.42, n: 6 } as const;
 const WICK_LINE = { top: 1.42, bottom: -1.3, radius: 0.028 } as const;
 /** The whole candle is drawn a little smaller so the wicks clear the frame. */
 const WICK_SCALE = 0.9;
+
+/**
+ * How fast the driven candle follows its control. The host owns the physics
+ * and sends a target every frame; this only takes the step edges off, so it
+ * is quick - most of the gap in a few frames.
+ */
+const CANDLE_FOLLOW_RATE = rateFromPerFrame(0.35);
+/** The level line fades at the same pace as a state colour. */
+const LEVEL_FADE_RATE = rateFromPerFrame(0.06);
+/** Half-height of the visible scene at z = 0: 4.2 * tan(45deg / 2). */
+const VIEW_HALF_HEIGHT = 4.2 * Math.tan((45 / 2) * (Math.PI / 180));
 
 /**
  * Bend a sphere into the candle body. Each vertex keeps its direction but is
@@ -257,6 +268,25 @@ export class OrbPass implements ScenePass {
   private readonly trades: TradeBands | null;
   private readonly wickGroup = new THREE.Group();
   private readonly wickGeometries: THREE.BufferGeometry[] = [];
+  private wickTop: THREE.Mesh | null = null;
+  private wickBottom: THREE.Mesh | null = null;
+  private levelMeshes: THREE.Mesh[] = [];
+  private levelMaterials: THREE.MeshBasicMaterial[] = [];
+  private levelGeometries: THREE.BufferGeometry[] = [];
+  /** The host's candle control, or null for the resting candle. */
+  private candle: CandleControl | null = null;
+  /** Eased candle geometry, in candle units. Starts on the resting candle. */
+  private readonly live = {
+    bottom: -WICK_BODY.b * 0.9,
+    top: WICK_BODY.b * 0.9,
+    low: WICK_LINE.bottom as number,
+    high: WICK_LINE.top as number,
+    levelY: 0,
+    levelOpacity: 0,
+    levelColor: [1, 1, 1] as [number, number, number],
+  };
+  private width = 1;
+  private height = 1;
   private spin = 0;
 
   constructor(tier: PerformanceTier, shape: OrbShape = 'orb', trades = false) {
@@ -333,19 +363,42 @@ export class OrbPass implements ScenePass {
 
     if (shape === 'wick') {
       // The wicks share the orb's shader, so they ripple and rim-light with it.
-      const { top, bottom, radius } = WICK_LINE;
-      const bodyTop = WICK_BODY.b;
-      for (const [from, to] of [
-        [bodyTop * 0.9, top],
-        [bottom, -bodyTop * 0.9],
-      ] as const) {
-        const height = to - from;
-        const geometry = new THREE.CylinderGeometry(radius, radius, height, 6, Math.max(4, Math.round(height * 14)), true);
-        geometry.translate(0, from + height / 2, 0);
-        this.wickGeometries.push(geometry);
-        this.wickGroup.add(new THREE.Mesh(geometry, this.material));
-      }
+      // Each is a unit cylinder standing on y = 0, positioned and stretched
+      // per frame, so a driven candle can grow its wicks without rebuilding.
+      const { radius } = WICK_LINE;
+      const geometry = new THREE.CylinderGeometry(radius, radius, 1, 6, 12, true);
+      geometry.translate(0, 0.5, 0);
+      this.wickGeometries.push(geometry);
+      this.wickTop = new THREE.Mesh(geometry, this.material);
+      this.wickBottom = new THREE.Mesh(geometry, this.material);
+      // The lower wick hangs: flip it so it grows downward from its position.
+      this.wickBottom.scale.y = -1;
+      this.wickGroup.add(this.wickTop, this.wickBottom);
       this.group.add(this.wickGroup);
+
+      // The level: a thin bright line across the whole view with a soft band
+      // behind it. Lives in the orb's scene so it sits exactly on the candle's
+      // y axis and sways with nothing.
+      for (const [thickness, gain] of [
+        [0.014, 1],
+        [0.09, 0.18],
+      ] as const) {
+        const plane = new THREE.PlaneGeometry(16, thickness);
+        const material = new THREE.MeshBasicMaterial({
+          color: srgbColor([1, 1, 1]),
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+        material.userData = { gain };
+        const mesh = new THREE.Mesh(plane, material);
+        mesh.visible = false;
+        this.levelGeometries.push(plane);
+        this.levelMaterials.push(material);
+        this.levelMeshes.push(mesh);
+        this.scene.add(mesh);
+      }
     }
 
     this.glowGeometry = new THREE.IcosahedronGeometry(1.3, 5);
@@ -463,10 +516,78 @@ export class OrbPass implements ScenePass {
       this.group.rotation.x = Math.sin(ctx.animTime * 0.11) * 0.06;
       this.group.rotation.z = Math.sin(ctx.animTime * 0.17) * 0.04;
       this.group.scale.setScalar(scale * WICK_SCALE);
-      this.mesh.scale.set(1, 1 + audio.level * 0.22 + audio.bass * 0.08, 1);
+      this.updateCandle(ctx.dt, audio.level, audio.bass);
     } else {
       this.group.rotation.x = Math.sin(ctx.animTime * 0.11) * 0.22;
       this.group.scale.setScalar(scale);
+    }
+  }
+
+  /** Hand the candle to a host, or back to the engine with `null`. */
+  setCandle(control: CandleControl | null): void {
+    this.candle = control;
+  }
+
+  getCandleMetrics(): CandleMetrics {
+    const pxPerUnit = (this.height / 2 / VIEW_HALF_HEIGHT) * WICK_SCALE;
+    return { pxPerUnit, originX: this.width / 2, originY: this.height / 2 };
+  }
+
+  /**
+   * Place the body, wicks, halo and level for this frame.
+   *
+   * With no control the candle rests and breathes with the voice as before.
+   * With one, every edge eases toward the host's numbers.
+   */
+  private updateCandle(dt: number, level: number, bass: number): void {
+    const c = this.candle;
+    const l = this.live;
+    const restHalf = WICK_BODY.b * 0.9;
+    const voice = 1 + level * 0.22 + bass * 0.08;
+    const targetBottom = c ? Math.min(c.bottom, c.top) : -restHalf * voice;
+    const targetTop = c ? Math.max(c.bottom, c.top) : restHalf * voice;
+    const targetLow = c ? Math.min(c.low ?? targetBottom - 0.5, targetBottom) : WICK_LINE.bottom;
+    const targetHigh = c ? Math.max(c.high ?? targetTop + 0.6, targetTop) : WICK_LINE.top;
+    l.bottom = approach(l.bottom, targetBottom, CANDLE_FOLLOW_RATE, dt);
+    l.top = approach(l.top, targetTop, CANDLE_FOLLOW_RATE, dt);
+    l.low = approach(l.low, targetLow, CANDLE_FOLLOW_RATE, dt);
+    l.high = approach(l.high, targetHigh, CANDLE_FOLLOW_RATE, dt);
+
+    const height = Math.max(0.02, l.top - l.bottom);
+    const centre = (l.top + l.bottom) / 2;
+    const bodyScale = height / (2 * WICK_BODY.b);
+    for (const mesh of [this.mesh, this.fillMesh]) {
+      if (!mesh) continue;
+      mesh.position.y = centre;
+      mesh.scale.set(1, bodyScale, 1);
+    }
+    if (this.wickTop) {
+      this.wickTop.position.y = l.top * 0.98;
+      this.wickTop.scale.y = Math.max(0.001, l.high - l.top * 0.98);
+    }
+    if (this.wickBottom) {
+      this.wickBottom.position.y = l.bottom * 0.98;
+      this.wickBottom.scale.y = -Math.max(0.001, l.bottom * 0.98 - l.low);
+    }
+    // The halo hugs the body wherever it is.
+    this.glowMesh.position.y = centre;
+    this.glowMesh.scale.set(0.62, 1.15 * Math.max(0.35, bodyScale), 0.62);
+
+    // The level line.
+    const lv = c?.level ?? null;
+    if (lv) {
+      l.levelY = l.levelOpacity < 0.01 ? lv.y : approach(l.levelY, lv.y, CANDLE_FOLLOW_RATE, dt);
+      for (let i = 0; i < 3; i += 1) l.levelColor[i] = approach(l.levelColor[i]!, lv.color[i]!, LEVEL_FADE_RATE, dt);
+    }
+    l.levelOpacity = approach(l.levelOpacity, lv ? clamp01(lv.opacity) : 0, LEVEL_FADE_RATE, dt);
+    for (let i = 0; i < this.levelMeshes.length; i += 1) {
+      const mesh = this.levelMeshes[i]!;
+      const material = this.levelMaterials[i]!;
+      const gain = (material.userData as { gain: number }).gain;
+      material.opacity = l.levelOpacity * gain;
+      material.visible = mesh.visible = l.levelOpacity > 0.005;
+      setSrgb(material.color, l.levelColor);
+      mesh.position.y = l.levelY * WICK_SCALE;
     }
   }
 
@@ -475,6 +596,8 @@ export class OrbPass implements ScenePass {
   }
 
   resize(width: number, height: number): void {
+    this.width = Math.max(1, width);
+    this.height = Math.max(1, height);
     this.camera.aspect = height > 0 ? width / height : 1;
     this.camera.updateProjectionMatrix();
   }
@@ -493,6 +616,8 @@ export class OrbPass implements ScenePass {
     this.glowGeometry.dispose();
     this.glowMaterial.dispose();
     for (const geometry of this.wickGeometries) geometry.dispose();
+    for (const geometry of this.levelGeometries) geometry.dispose();
+    for (const material of this.levelMaterials) material.dispose();
     for (const d of this.pupilDisposables) d.dispose();
     this.fillMaterial?.dispose();
     this.trades?.dispose();

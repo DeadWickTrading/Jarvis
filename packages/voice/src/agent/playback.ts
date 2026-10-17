@@ -7,6 +7,8 @@ export interface PcmPlayer {
   enqueue(bytes: ArrayBuffer | ArrayBufferView): void;
   /** Drop everything scheduled and not yet heard. Used for barge-in. */
   clear(): void;
+  /** Start playing whatever is staged, even if the prime target is not reached (the agent said it is done). */
+  flush(): void;
   /** True while anything is still scheduled to play. */
   readonly playing: boolean;
   dispose(): void;
@@ -20,6 +22,15 @@ export interface PcmPlayerOptions {
   readonly onDrained?: () => void;
   /** Fired when the first chunk of a new utterance starts. */
   readonly onStarted?: () => void;
+  /**
+   * Audio to hold back before an utterance starts, in seconds (default 0.25).
+   * The agent's chunks arrive in bursts; starting on the first one means the
+   * second is often late, which is heard as a stutter. Priming costs that much
+   * delay once per utterance and buys smooth speech. 0 = start at once.
+   */
+  readonly primeSeconds?: number;
+  /** Never hold staged audio longer than this (default 0.6 s), even if the prime target is not reached. */
+  readonly maxHoldSeconds?: number;
 }
 
 /**
@@ -51,7 +62,47 @@ export function createPcmPlayer(options: PcmPlayerOptions): PcmPlayer {
    * which the browser renders as a click or drops entirely. Too large and the
    * agent sounds slow to answer.
    */
-  const LEAD_SECONDS = 0.08;
+  const LEAD_SECONDS = 0.12;
+  const PRIME = options.primeSeconds ?? 0.25;
+  const MAX_HOLD = options.maxHoldSeconds ?? 0.6;
+
+  /** Chunks held back until the prime target (or flush). */
+  let staged: AudioBuffer[] = [];
+  let stagedSeconds = 0;
+  let holdTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const schedule = (buffer: AudioBuffer): void => {
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(node);
+
+    const now = context.currentTime;
+    const wasIdle = active.size === 0;
+    // If the queue ran dry, or we have fallen behind, start afresh rather
+    // than scheduling into the past.
+    if (nextStart < now + LEAD_SECONDS / 2) nextStart = now + LEAD_SECONDS;
+
+    source.start(nextStart);
+    nextStart += buffer.duration;
+
+    active.add(source);
+    source.onended = () => {
+      active.delete(source);
+      source.disconnect();
+      if (active.size === 0) options.onDrained?.();
+    };
+
+    if (wasIdle) options.onStarted?.();
+  };
+
+  const release = (): void => {
+    if (holdTimer) clearTimeout(holdTimer);
+    holdTimer = null;
+    const list = staged;
+    staged = [];
+    stagedSeconds = 0;
+    for (const b of list) schedule(b);
+  };
 
   return {
     node,
@@ -66,30 +117,28 @@ export function createPcmPlayer(options: PcmPlayerOptions): PcmPlayer {
       const buffer = context.createBuffer(1, samples.length, sampleRate);
       buffer.copyToChannel(samples, 0);
 
-      const source = context.createBufferSource();
-      source.buffer = buffer;
-      source.connect(node);
+      // Mid-utterance (something is playing and we are ahead of the clock):
+      // schedule straight on the back of it. Otherwise stage until primed.
+      const ahead = nextStart - context.currentTime;
+      if (active.size > 0 && ahead > LEAD_SECONDS / 2 && staged.length === 0) {
+        schedule(buffer);
+        return;
+      }
+      staged.push(buffer);
+      stagedSeconds += buffer.duration;
+      if (stagedSeconds >= PRIME || PRIME <= 0) release();
+      else if (!holdTimer) holdTimer = setTimeout(release, MAX_HOLD * 1000);
+    },
 
-      const now = context.currentTime;
-      const wasIdle = active.size === 0;
-      // If the queue ran dry, or we have fallen behind, start afresh rather
-      // than scheduling into the past.
-      if (nextStart < now + LEAD_SECONDS / 2) nextStart = now + LEAD_SECONDS;
-
-      source.start(nextStart);
-      nextStart += buffer.duration;
-
-      active.add(source);
-      source.onended = () => {
-        active.delete(source);
-        source.disconnect();
-        if (active.size === 0) options.onDrained?.();
-      };
-
-      if (wasIdle) options.onStarted?.();
+    flush() {
+      if (staged.length) release();
     },
 
     clear() {
+      if (holdTimer) clearTimeout(holdTimer);
+      holdTimer = null;
+      staged = [];
+      stagedSeconds = 0;
       for (const source of active) {
         try {
           source.stop();

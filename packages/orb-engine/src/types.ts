@@ -105,6 +105,12 @@ export interface OrbSceneOptions {
    */
   readonly trades?: boolean;
   /**
+   * Draw the nebula sky and the star network behind the subject. Defaults to
+   * true. `false` draws the subject alone on the ink: the cheapest scene, for
+   * a page that only needs the candle.
+   */
+  readonly background?: boolean;
+  /**
    * Colour scheme. `lime` (default) is the original; `violet` rests in P2P
    * violet, listens in cyan, thinks in amber/orange and speaks in Wick lime.
    */
@@ -126,8 +132,46 @@ export interface OrbSceneOptions {
   readonly maxPixelRatio?: number;
 }
 
+/**
+ * Live control of the candle when the shape is `wick`.
+ *
+ * Units are the candle's own: y up, the resting body spans -0.78..0.78 and
+ * the resting wicks reach 1.42 and -1.3. A host moves the body and wicks
+ * each frame (it owns the physics); the engine eases the last step so the
+ * mesh never snaps. `null` for any field, or for the whole control, hands
+ * that part back to the engine's resting candle.
+ */
+export interface CandleControl {
+  /** Body bottom, in candle units. */
+  readonly bottom: number;
+  /** Body top, in candle units. Must be >= bottom. */
+  readonly top: number;
+  /** Lower wick end. Defaults to a short wick under the body. */
+  readonly low?: number;
+  /** Upper wick end. Defaults to a short wick above the body. */
+  readonly high?: number;
+  /** Colour override, 0..1 rgb, eased in. `null` returns to the state table. */
+  readonly color?: Rgb | null;
+  /** A horizontal level drawn across the scene at `y`, or `null` for none. */
+  readonly level?: { readonly y: number; readonly color: Rgb; readonly opacity: number } | null;
+}
+
+/** How candle units map to the container, for a host doing its own physics. */
+export interface CandleMetrics {
+  /** Container pixels per candle unit. */
+  readonly pxPerUnit: number;
+  /** Container x, in pixels, of the candle's centre line. */
+  readonly originX: number;
+  /** Container y, in pixels, of candle y = 0. */
+  readonly originY: number;
+}
+
 /** The engine's public surface. Everything a host page needs, nothing more. */
 export interface OrbSceneHandle {
+  /** Drive the candle (shape `wick` only). `null` returns it to rest. */
+  setCandle(control: CandleControl | null): void;
+  /** Pixel mapping of candle units, for the host's pointer maths. */
+  getCandleMetrics(): CandleMetrics;
   /** Move to a state. Transitions are always eased. */
   setState(state: OrbState): void;
   /** The current state. */

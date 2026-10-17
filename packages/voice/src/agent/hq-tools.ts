@@ -12,6 +12,10 @@ export function createHqTools(base = ''): Record<string, (args: Record<string, u
   return {
     get_live_price: async () => text(await fetch(`${base}/api/hq/live`, { cache: 'no-store' })),
     refresh_hq: async () => text(await fetch(`${base}/api/hq/context`, { cache: 'no-store' })),
+    read_playbook: async (args) =>
+      text(await fetch(`${base}/api/hq/playbook?topic=${encodeURIComponent(String(args.topic ?? ''))}`, { cache: 'no-store' })),
+    review_fill: async (args) =>
+      text(await fetch(`${base}/api/hq/fill?play=${encodeURIComponent(String(args.play ?? ''))}`, { cache: 'no-store' })),
     log_trade_idea: async (args) =>
       text(
         await fetch(`${base}/api/hq/idea`, {
